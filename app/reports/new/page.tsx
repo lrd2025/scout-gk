@@ -1,7 +1,6 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import { supabase } from "../../../lib/supabase";
 
 type Player = {
@@ -44,8 +43,7 @@ function calculateAge(birthDate: string | null) {
 }
 
 export default function NewReportPage() {
-  const searchParams = useSearchParams();
-  const playerId = searchParams.get("player");
+  const [playerId, setPlayerId] = useState<string | null>(null);
 
   const [player, setPlayer] = useState<Player | null>(null);
   const [metrics, setMetrics] = useState<Metric[]>([]);
@@ -56,10 +54,20 @@ export default function NewReportPage() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    loadData();
-  }, [playerId]);
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("player");
 
-  async function loadData() {
+    setPlayerId(id);
+
+    if (id) {
+      loadData(id);
+    } else {
+      setMessage("No se indicó el jugador a evaluar.");
+      setLoading(false);
+    }
+  }, []);
+
+  async function loadData(id: string) {
     setLoading(true);
     setMessage("");
 
@@ -67,12 +75,6 @@ export default function NewReportPage() {
 
     if (!authData.session) {
       setMessage("Necesitás iniciar sesión.");
-      setLoading(false);
-      return;
-    }
-
-    if (!playerId) {
-      setMessage("No se indicó el jugador a evaluar.");
       setLoading(false);
       return;
     }
@@ -89,7 +91,7 @@ export default function NewReportPage() {
         preferred_foot,
         height_cm
       `)
-      .eq("id", playerId)
+      .eq("id", id)
       .single();
 
     if (playerError) {
@@ -117,11 +119,7 @@ export default function NewReportPage() {
       return;
     }
 
-    setPlayer(playerData as Player);
-
     const loadedMetrics = (metricsData || []) as Metric[];
-
-    setMetrics(loadedMetrics);
 
     const initialScores: Record<string, number> = {};
 
@@ -129,6 +127,8 @@ export default function NewReportPage() {
       initialScores[metric.id] = 5;
     });
 
+    setPlayer(playerData as Player);
+    setMetrics(loadedMetrics);
     setScores(initialScores);
 
     setLoading(false);
@@ -139,7 +139,10 @@ export default function NewReportPage() {
 
     if (!values.length) return 0;
 
-    return values.reduce((sum, value) => sum + value, 0) / values.length;
+    return (
+      values.reduce((sum, value) => sum + value, 0) /
+      values.length
+    );
   }, [scores]);
 
   const groupedMetrics = useMemo(() => {
@@ -159,189 +162,186 @@ export default function NewReportPage() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!playerId) return;
+    if (!playerId) {
+      setMessage("No se encontró el jugador.");
+      return;
+    }
 
     setSaving(true);
     setMessage("");
 
-    const { data: authData } = await supabase.auth.getSession();
+    try {
+      const { data: authData } = await supabase.auth.getSession();
 
-    if (!authData.session) {
+      if (!authData.session) {
+        throw new Error("La sesión no está activa.");
+      }
+
+      const form = new FormData(event.currentTarget);
+
+      const reportPayload = {
+        player_id: playerId,
+
+        report_date:
+          String(form.get("report_date") || "") ||
+          new Date().toISOString().split("T")[0],
+
+        minutes_observed:
+          form.get("minutes_observed")
+            ? Number(form.get("minutes_observed"))
+            : null,
+
+        formation:
+          String(form.get("formation") || "").trim() || null,
+
+        tracking_line:
+          String(form.get("tracking_line") || "") || null,
+
+        general_observation:
+          String(form.get("general_observation") || "").trim() ||
+          null,
+
+        injury_flag:
+          String(form.get("injury_flag") || "false") === "true",
+
+        national_team_flag:
+          String(form.get("national_team_flag") || "false") === "true",
+
+        global_score: Number(globalScore.toFixed(2)),
+
+        report_status: "FINAL",
+      };
+
+      const { data: reportData, error: reportError } =
+        await supabase
+          .from("scouting_reports")
+          .insert(reportPayload)
+          .select("id")
+          .single();
+
+      if (reportError) {
+        throw reportError;
+      }
+
+      const scoreRows = metrics.map((metric) => ({
+        report_id: reportData.id,
+        metric_id: metric.id,
+        score: scores[metric.id] ?? 5,
+        source_type: "MANUAL",
+        validated: true,
+      }));
+
+      const { error: scoresError } = await supabase
+        .from("report_scores")
+        .insert(scoreRows);
+
+      if (scoresError) {
+        throw scoresError;
+      }
+
+      await updateTracking(playerId);
+
+      window.location.href = `/players/${playerId}`;
+    } catch (error: any) {
+      console.error(error);
+
+      setMessage(
+        error?.message || "No se pudo guardar el informe."
+      );
+
       setSaving(false);
-      setMessage("La sesión no está activa.");
-      return;
     }
-
-    const form = new FormData(event.currentTarget);
-
-    const trackingLine = String(
-      form.get("tracking_line") || ""
-    );
-
-    const reportPayload = {
-      player_id: playerId,
-
-      report_date:
-        String(form.get("report_date") || "") ||
-        new Date().toISOString().split("T")[0],
-
-      minutes_observed:
-        form.get("minutes_observed")
-          ? Number(form.get("minutes_observed"))
-          : null,
-
-      formation:
-        String(form.get("formation") || "").trim() || null,
-
-      tracking_line:
-        trackingLine || null,
-
-      general_observation:
-        String(form.get("general_observation") || "").trim() ||
-        null,
-
-      injury_flag:
-        String(form.get("injury_flag") || "false") === "true",
-
-      national_team_flag:
-        String(form.get("national_team_flag") || "false") === "true",
-
-      global_score:
-        Number(globalScore.toFixed(2)),
-
-      report_status: "FINAL",
-    };
-
-    const { data: reportData, error: reportError } = await supabase
-      .from("scouting_reports")
-      .insert(reportPayload)
-      .select("id")
-      .single();
-
-    if (reportError) {
-      setSaving(false);
-      setMessage(reportError.message);
-      return;
-    }
-
-    const scoreRows = metrics.map((metric) => ({
-      report_id: reportData.id,
-      metric_id: metric.id,
-      score: scores[metric.id],
-      source_type: "MANUAL",
-      validated: true,
-    }));
-
-    const { error: scoresError } = await supabase
-      .from("report_scores")
-      .insert(scoreRows);
-
-    if (scoresError) {
-      setSaving(false);
-      setMessage(scoresError.message);
-      return;
-    }
-
-    await updatePlayerTracking(playerId);
-
-    window.location.href = `/players/${playerId}`;
   }
 
-  async function updatePlayerTracking(playerId: string) {
-    const { data: reportsData } = await supabase
+  async function updateTracking(id: string) {
+    const { data: reportsData, error } = await supabase
       .from("scouting_reports")
       .select(`
         global_score,
         minutes_observed,
         report_date
       `)
-      .eq("player_id", playerId)
+      .eq("player_id", id)
       .eq("report_status", "FINAL")
       .order("report_date", { ascending: true });
+
+    if (error) {
+      console.error(error);
+      return;
+    }
 
     const reports = reportsData || [];
 
     if (!reports.length) return;
 
-    const validScores = reports
+    const values = reports
       .map((report) => Number(report.global_score))
       .filter((value) => !Number.isNaN(value));
 
-    const totalReports = reports.length;
+    if (!values.length) return;
 
-    const totalMinutes = reports.reduce(
-      (sum, report) =>
-        sum + Number(report.minutes_observed || 0),
+    const reportsCount = reports.length;
+
+    const minutesObserved = reports.reduce(
+      (total, report) =>
+        total + Number(report.minutes_observed || 0),
       0
     );
 
     const average =
-      validScores.reduce((sum, value) => sum + value, 0) /
-      validScores.length;
+      values.reduce((total, value) => total + value, 0) /
+      values.length;
 
-    const lastScore =
-      validScores[validScores.length - 1] ?? null;
+    const lastScore = values[values.length - 1];
 
-    const bestScore =
-      validScores.length
-        ? Math.max(...validScores)
-        : null;
+    const bestScore = Math.max(...values);
+    const worstScore = Math.min(...values);
 
-    const worstScore =
-      validScores.length
-        ? Math.min(...validScores)
-        : null;
+    const last3Values = values.slice(-3);
+    const last5Values = values.slice(-5);
 
-    const last3Array = validScores.slice(-3);
+    const scoreLast3 =
+      last3Values.reduce((a, b) => a + b, 0) /
+      last3Values.length;
 
-    const last3 =
-      last3Array.length
-        ? last3Array.reduce((a, b) => a + b, 0) /
-          last3Array.length
-        : null;
-
-    const last5Array = validScores.slice(-5);
-
-    const last5 =
-      last5Array.length
-        ? last5Array.reduce((a, b) => a + b, 0) /
-          last5Array.length
-        : null;
+    const scoreLast5 =
+      last5Values.reduce((a, b) => a + b, 0) /
+      last5Values.length;
 
     let trend = "STABLE";
 
-    if (validScores.length >= 3) {
-      const firstRecent = validScores[validScores.length - 3];
-      const latest = validScores[validScores.length - 1];
+    if (values.length >= 3) {
+      const previous = values[values.length - 3];
+      const latest = values[values.length - 1];
 
-      if (latest - firstRecent >= 0.5) {
+      if (latest - previous >= 0.5) {
         trend = "ASCENDING";
-      } else if (firstRecent - latest >= 0.5) {
+      } else if (previous - latest >= 0.5) {
         trend = "DESCENDING";
       }
     }
 
     let evidenceLevel = "VERY_LOW";
 
-    if (totalReports >= 10) {
+    if (reportsCount >= 10) {
       evidenceLevel = "CONSOLIDATED";
-    } else if (totalReports >= 7) {
+    } else if (reportsCount >= 7) {
       evidenceLevel = "HIGH";
-    } else if (totalReports >= 4) {
+    } else if (reportsCount >= 4) {
       evidenceLevel = "MODERATE";
-    } else if (totalReports >= 2) {
+    } else if (reportsCount >= 2) {
       evidenceLevel = "LOW";
     }
 
     let consistencyScore: number | null = null;
 
-    if (validScores.length >= 2) {
+    if (values.length >= 2) {
       const variance =
-        validScores.reduce(
-          (sum, value) =>
-            sum + Math.pow(value - average, 2),
+        values.reduce(
+          (total, value) =>
+            total + Math.pow(value - average, 2),
           0
-        ) / validScores.length;
+        ) / values.length;
 
       const standardDeviation = Math.sqrt(variance);
 
@@ -351,42 +351,28 @@ export default function NewReportPage() {
       );
     }
 
-    await supabase
+    const { error: updateError } = await supabase
       .from("player_tracking_metadata")
       .update({
-        reports_count: totalReports,
-        matches_observed: totalReports,
-        minutes_observed: totalMinutes,
+        reports_count: reportsCount,
+        matches_observed: reportsCount,
+        minutes_observed: minutesObserved,
 
         avg_global_score: Number(average.toFixed(2)),
-        last_global_score: lastScore
-          ? Number(lastScore.toFixed(2))
-          : null,
+        last_global_score: Number(lastScore.toFixed(2)),
 
-        best_score: bestScore
-          ? Number(bestScore.toFixed(2))
-          : null,
+        best_score: Number(bestScore.toFixed(2)),
+        worst_score: Number(worstScore.toFixed(2)),
 
-        worst_score: worstScore
-          ? Number(worstScore.toFixed(2))
-          : null,
-
-        score_last_3: last3
-          ? Number(last3.toFixed(2))
-          : null,
-
-        score_last_5: last5
-          ? Number(last5.toFixed(2))
-          : null,
+        score_last_3: Number(scoreLast3.toFixed(2)),
+        score_last_5: Number(scoreLast5.toFixed(2)),
 
         consistency_score:
           consistencyScore !== null
             ? Number(consistencyScore.toFixed(2))
             : null,
 
-        current_level_score: Number(
-          average.toFixed(2)
-        ),
+        current_level_score: Number(average.toFixed(2)),
 
         evidence_level: evidenceLevel,
         trend,
@@ -396,18 +382,18 @@ export default function NewReportPage() {
 
         updated_at: new Date().toISOString(),
       })
-      .eq("player_id", playerId);
+      .eq("player_id", id);
+
+    if (updateError) {
+      console.error(updateError);
+    }
   }
 
   if (loading) {
-    return (
-      <div className="card">
-        Cargando informe...
-      </div>
-    );
+    return <div className="card">Cargando informe...</div>;
   }
 
-  if (message && !player) {
+  if (!player) {
     return (
       <div className="card">
         <h1 className="text-xl font-black">
@@ -425,8 +411,6 @@ export default function NewReportPage() {
     );
   }
 
-  if (!player) return null;
-
   const age = calculateAge(player.birth_date);
 
   return (
@@ -436,53 +420,46 @@ export default function NewReportPage() {
           Nuevo informe
         </div>
 
-        <h1 className="mt-1 text-3xl font-black">
-          {player.full_name}
-        </h1>
+        <div className="mt-2 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-black">
+              {player.full_name}
+            </h1>
 
-        <div className="mt-2 text-slate-300">
-          {player.specific_position || player.position}
+            <p className="mt-2 text-slate-300">
+              {player.specific_position || player.position}
 
-          {age !== null && ` · ${age} años`}
+              {age !== null && ` · ${age} años`}
 
-          {player.height_cm &&
-            ` · ${player.height_cm} cm`}
+              {player.height_cm &&
+                ` · ${player.height_cm} cm`}
 
-          {player.preferred_foot &&
-            ` · ${player.preferred_foot}`}
+              {player.preferred_foot &&
+                ` · ${player.preferred_foot}`}
+            </p>
+          </div>
+
+          <div className="text-right">
+            <div className="text-sm text-slate-400">
+              Score global
+            </div>
+
+            <div className="text-4xl font-black">
+              {globalScore.toFixed(2)}
+            </div>
+
+            <div className="text-xs text-slate-500">
+              /10
+            </div>
+          </div>
         </div>
       </section>
 
-      <form
-        onSubmit={handleSubmit}
-        className="space-y-6"
-      >
+      <form onSubmit={handleSubmit} className="space-y-6">
         <section className="card">
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <h2 className="text-xl font-black">
-                Datos del partido
-              </h2>
-
-              <p className="mt-1 text-sm text-slate-400">
-                Información general de la observación.
-              </p>
-            </div>
-
-            <div className="text-right">
-              <div className="text-xs text-slate-400">
-                Score global
-              </div>
-
-              <div className="text-4xl font-black">
-                {globalScore.toFixed(2)}
-              </div>
-
-              <div className="text-xs text-slate-500">
-                /10
-              </div>
-            </div>
-          </div>
+          <h2 className="text-xl font-black">
+            Datos de observación
+          </h2>
 
           <div className="mt-6 grid gap-4 md:grid-cols-2">
             <Field
@@ -492,18 +469,19 @@ export default function NewReportPage() {
               defaultValue={
                 new Date().toISOString().split("T")[0]
               }
+              required
             />
 
             <Field
               label="Competencia / torneo"
               name="competition"
-              placeholder="Reserva / Primera Nacional..."
+              placeholder="Torneo Federal A"
             />
 
             <Field
               label="Equipos y resultado"
               name="match_description"
-              placeholder="Equipo A 1 - 0 Equipo B"
+              placeholder="Equipo A 1 - Equipo B 0"
             />
 
             <Field
@@ -539,7 +517,7 @@ export default function NewReportPage() {
 
             <div>
               <label className="label">
-                Línea de seguimiento
+                Línea
               </label>
 
               <select
@@ -577,7 +555,7 @@ export default function NewReportPage() {
               Historial de lesiones
             </h3>
 
-            <div className="mt-4 space-y-2">
+            <div className="mt-4 space-y-3">
               <label className="block">
                 <input
                   type="radio"
@@ -604,7 +582,7 @@ export default function NewReportPage() {
               Pasado en selecciones
             </h3>
 
-            <div className="mt-4 space-y-2">
+            <div className="mt-4 space-y-3">
               <label className="block">
                 <input
                   type="radio"
@@ -629,10 +607,7 @@ export default function NewReportPage() {
 
         {Object.entries(groupedMetrics).map(
           ([group, groupMetrics]) => (
-            <section
-              key={group}
-              className="card"
-            >
+            <section key={group} className="card">
               <h2 className="text-xl font-black">
                 {group}
               </h2>
@@ -641,7 +616,7 @@ export default function NewReportPage() {
                 {groupMetrics.map((metric) => (
                   <div
                     key={metric.id}
-                    className="grid gap-3 md:grid-cols-[240px_1fr_60px] md:items-center"
+                    className="grid gap-3 md:grid-cols-[230px_1fr_60px] md:items-center"
                   >
                     <div className="font-bold">
                       {metric.label}
@@ -652,12 +627,11 @@ export default function NewReportPage() {
                       min="1"
                       max="10"
                       step="1"
-                      value={
-                        scores[metric.id] ?? 5
-                      }
+                      value={scores[metric.id] ?? 5}
                       onChange={(event) =>
                         setScores((current) => ({
                           ...current,
+
                           [metric.id]: Number(
                             event.target.value
                           ),
@@ -677,13 +651,13 @@ export default function NewReportPage() {
 
         <section className="card">
           <label className="label">
-            Observación general
+            Observaciones generales
           </label>
 
           <textarea
             className="input min-h-48"
             name="general_observation"
-            placeholder="Síntesis profesional del jugador: perfil general, fortalezas, aspectos a mejorar, impacto de las falencias y recomendación de seguimiento..."
+            placeholder="Perfil general, fortalezas, aspectos a mejorar, impacto de las falencias y recomendación de seguimiento..."
           />
         </section>
 
@@ -693,20 +667,21 @@ export default function NewReportPage() {
           </div>
         )}
 
-        <div className="flex justify-end gap-3">
+        <div className="flex justify-end gap-3 pb-10">
           <a
             href={`/players/${player.id}`}
-            className="rounded-lg border border-slate-600 px-4 py-2"
+            className="rounded-lg border border-slate-600 px-5 py-3"
           >
             Cancelar
           </a>
 
           <button
-            className="btn"
+            type="submit"
+            className="btn px-6 py-3"
             disabled={saving}
           >
             {saving
-              ? "Guardando..."
+              ? "Guardando informe..."
               : "Guardar informe"}
           </button>
         </div>
