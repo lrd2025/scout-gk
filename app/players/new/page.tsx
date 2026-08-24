@@ -1,11 +1,6 @@
 "use client";
 
-import {
-  FormEvent,
-  useEffect,
-  useState,
-} from "react";
-
+import { FormEvent, useEffect, useState } from "react";
 import { supabase } from "../../../lib/supabase";
 
 type Club = {
@@ -54,41 +49,30 @@ export default function NewPlayerPage() {
 
     const form = new FormData(event.currentTarget);
 
-    const firstName = String(
-      form.get("first_name") || ""
-    ).trim();
-
-    const lastName = String(
-      form.get("last_name") || ""
-    ).trim();
-
     const payload = {
       internal_code:
-        String(form.get("internal_code") || "").trim() ||
-        null,
+        String(form.get("internal_code") || "").trim() || null,
 
-      first_name: firstName,
+      first_name:
+        String(form.get("first_name") || "").trim(),
 
-      last_name: lastName,
+      last_name:
+        String(form.get("last_name") || "").trim(),
 
       birth_date:
         String(form.get("birth_date") || "") || null,
 
       nationality:
-        String(form.get("nationality") || "").trim() ||
-        null,
+        String(form.get("nationality") || "").trim() || null,
 
       position:
         String(form.get("position") || "GK"),
 
       specific_position:
-        String(
-          form.get("specific_position") || ""
-        ).trim() || null,
+        String(form.get("specific_position") || "").trim() || null,
 
       preferred_foot:
-        String(form.get("preferred_foot") || "") ||
-        null,
+        String(form.get("preferred_foot") || "") || null,
 
       height_cm:
         form.get("height_cm")
@@ -101,9 +85,7 @@ export default function NewPlayerPage() {
           : null,
 
       current_club_id:
-        String(
-          form.get("current_club_id") || ""
-        ) || null,
+        String(form.get("current_club_id") || "") || null,
 
       active: true,
     };
@@ -343,15 +325,6 @@ function Field({
         className="input"
         {...props}
       />
-    </div>
-  );
-}
-function Field(props: any) {
-  const { label, ...inputProps } = props;
-  return (
-    <div>
-      <label className="label">{label}</label>
-      <input className="input" {...inputProps} />
     </div>
   );
 }
