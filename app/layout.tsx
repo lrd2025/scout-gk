@@ -11,14 +11,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <header className="border-b border-slate-800 bg-slate-950">
           <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-            <div>
+            <a href="/">
               <div className="text-xl font-black">SCOUT GK</div>
               <div className="text-xs text-slate-400">Inteligencia de scouting</div>
-            </div>
+            </a>
             <nav className="flex gap-5 text-sm text-slate-300">
               <a href="/">Dashboard</a>
               <a href="/players">Jugadores</a>
               <a href="/reports/new">Nuevo informe</a>
+              <a href="/login">Acceso</a>
             </nav>
           </div>
         </header>
