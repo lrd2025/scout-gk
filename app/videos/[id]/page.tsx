@@ -130,6 +130,15 @@ type AutomaticJob = {
   model_version: string | null;
 };
 
+
+type GoalkeeperTargetConfig = {
+  shirt_number: string;
+  shirt_color: string;
+  active_from_seconds: number;
+  active_to_seconds: number | null;
+  starting_goal_side: "LEFT" | "RIGHT" | "AUTO";
+};
+
 type YTPlayer = {
   getCurrentTime: () => number;
   getDuration: () => number;
@@ -411,6 +420,19 @@ export default function VideoDetailPage() {
     useState<AutomaticJob | null>(
       null
     );
+
+
+  const [
+    goalkeeperTargetConfig,
+    setGoalkeeperTargetConfig,
+  ] =
+    useState<GoalkeeperTargetConfig>({
+      shirt_number: "",
+      shirt_color: "",
+      active_from_seconds: 0,
+      active_to_seconds: null,
+      starting_goal_side: "AUTO",
+    });
 
   const playerContainerRef =
     useRef<HTMLDivElement | null>(
@@ -1117,11 +1139,31 @@ export default function VideoDetailPage() {
                 currentVideo.goalkeeper_team ||
                 null,
 
+              shirt_number:
+                goalkeeperTargetConfig.shirt_number
+                  ? Number(goalkeeperTargetConfig.shirt_number)
+                  : null,
+
+              shirt_color:
+                goalkeeperTargetConfig.shirt_color.trim() || null,
+
               goalkeeper_side:
                 goalkeeperSide,
 
               initial_timestamp_seconds:
-                0,
+                goalkeeperTargetConfig.active_from_seconds || 0,
+
+              active_from_seconds:
+                goalkeeperTargetConfig.active_from_seconds || 0,
+
+              active_to_seconds:
+                goalkeeperTargetConfig.active_to_seconds,
+
+              starting_goal_side:
+                goalkeeperTargetConfig.starting_goal_side,
+
+              identification_notes:
+                "Configurado desde Scout GK",
 
               identification_status:
                 "CONFIGURED",
@@ -2653,6 +2695,138 @@ export default function VideoDetailPage() {
               {automaticJob?.model_version ||
                 "v0.2.0"}
 
+            </div>
+
+          </div>
+
+        </div>
+
+        <div className="mt-6 rounded-xl border border-slate-800 p-4">
+
+          <div className="font-bold">
+            Configuración del arquero objetivo
+          </div>
+
+          <p className="mt-1 text-sm text-slate-400">
+            Estos datos ayudan al motor de visión a localizar y seguir al arquero correcto.
+          </p>
+
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+
+            <div>
+              <label className="label">
+                Dorsal
+              </label>
+
+              <input
+                className="input"
+                inputMode="numeric"
+                placeholder="Ej. 1"
+                value={goalkeeperTargetConfig.shirt_number}
+                onChange={(event) =>
+                  setGoalkeeperTargetConfig((current) => ({
+                    ...current,
+                    shirt_number: event.target.value,
+                  }))
+                }
+              />
+            </div>
+
+            <div>
+              <label className="label">
+                Color principal de camiseta
+              </label>
+
+              <input
+                className="input"
+                placeholder="Ej. amarillo, rojo, verde"
+                value={goalkeeperTargetConfig.shirt_color}
+                onChange={(event) =>
+                  setGoalkeeperTargetConfig((current) => ({
+                    ...current,
+                    shirt_color: event.target.value,
+                  }))
+                }
+              />
+            </div>
+
+            <div>
+              <label className="label">
+                Inicio del seguimiento (segundos)
+              </label>
+
+              <input
+                className="input"
+                type="number"
+                min="0"
+                value={goalkeeperTargetConfig.active_from_seconds}
+                onChange={(event) =>
+                  setGoalkeeperTargetConfig((current) => ({
+                    ...current,
+                    active_from_seconds: Math.max(
+                      0,
+                      Number(event.target.value) || 0
+                    ),
+                  }))
+                }
+              />
+            </div>
+
+            <div>
+              <label className="label">
+                Fin del seguimiento (segundos)
+              </label>
+
+              <input
+                className="input"
+                type="number"
+                min="0"
+                placeholder="Vacío = hasta el final"
+                value={
+                  goalkeeperTargetConfig.active_to_seconds === null
+                    ? ""
+                    : goalkeeperTargetConfig.active_to_seconds
+                }
+                onChange={(event) =>
+                  setGoalkeeperTargetConfig((current) => ({
+                    ...current,
+                    active_to_seconds:
+                      event.target.value === ""
+                        ? null
+                        : Math.max(0, Number(event.target.value) || 0),
+                  }))
+                }
+              />
+            </div>
+
+            <div>
+              <label className="label">
+                Arco inicial
+              </label>
+
+              <select
+                className="input"
+                value={goalkeeperTargetConfig.starting_goal_side}
+                onChange={(event) =>
+                  setGoalkeeperTargetConfig((current) => ({
+                    ...current,
+                    starting_goal_side: event.target.value as
+                      | "LEFT"
+                      | "RIGHT"
+                      | "AUTO",
+                  }))
+                }
+              >
+                <option value="AUTO">
+                  Detectar automáticamente
+                </option>
+                <option value="LEFT">
+                  Izquierda de pantalla
+                </option>
+                <option value="RIGHT">
+                  Derecha de pantalla
+                </option>
+              </select>
             </div>
 
           </div>
