@@ -2,6 +2,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+} from "recharts";
+
 import { supabase } from "../../../lib/supabase";
 
 type Player = {
@@ -15,7 +26,6 @@ type Player = {
   preferred_foot: string | null;
   height_cm: number | null;
   weight_kg: number | null;
-
   clubs: {
     name: string;
   } | null;
@@ -37,7 +47,6 @@ type Tracking = {
 
   current_level_score: number | null;
   potential_score: number | null;
-
   consistency_score: number | null;
 
   recruitment_priority: number | null;
@@ -73,50 +82,48 @@ type ReportScore = {
 };
 
 type MetricSummary = {
-  metric_id: string;
-  code: string;
+  id: string;
   label: string;
-  group_name: string;
   average: number;
-  count: number;
+  sort_order: number;
 };
 
-function clamp(
-  value: number,
-  min = 1,
-  max = 10
+function formatScore(
+  value: number | null | undefined
 ) {
-  return Math.max(
-    min,
-    Math.min(max, value)
-  );
+  if (
+    value === null ||
+    value === undefined ||
+    Number.isNaN(value)
+  ) {
+    return "—";
+  }
+
+  return Number(value).toFixed(2);
 }
 
 function calculateAge(
-  value: string | null
+  birthDate: string | null
 ) {
-  if (!value) {
+  if (!birthDate) {
     return null;
   }
 
-  const birth =
-    new Date(value);
-
-  const today =
-    new Date();
+  const birth = new Date(birthDate);
+  const today = new Date();
 
   let age =
     today.getFullYear() -
     birth.getFullYear();
 
-  const month =
+  const monthDifference =
     today.getMonth() -
     birth.getMonth();
 
   if (
-    month < 0 ||
+    monthDifference < 0 ||
     (
-      month === 0 &&
+      monthDifference === 0 &&
       today.getDate() <
         birth.getDate()
     )
@@ -127,30 +134,8 @@ function calculateAge(
   return age;
 }
 
-function formatScore(
-  value:
-    | number
-    | null
-    | undefined
-) {
-  if (
-    value === null ||
-    value === undefined ||
-    Number.isNaN(value)
-  ) {
-    return "—";
-  }
-
-  return Number(
-    value
-  ).toFixed(2);
-}
-
 function evidenceLabel(
-  value:
-    | string
-    | null
-    | undefined
+  value: string | null | undefined
 ) {
   switch (value) {
     case "VERY_LOW":
@@ -173,59 +158,22 @@ function evidenceLabel(
   }
 }
 
-function evidenceNeed(
-  value:
-    | string
-    | null
-    | undefined
-) {
-  switch (value) {
-    case "VERY_LOW":
-      return 10;
-
-    case "LOW":
-      return 8;
-
-    case "MODERATE":
-      return 6;
-
-    case "HIGH":
-      return 3;
-
-    case "CONSOLIDATED":
-      return 1;
-
-    default:
-      return 10;
-  }
-}
-
 function trendLabel(
-  value:
-    | string
-    | null
-    | undefined
+  value: string | null | undefined
 ) {
-  switch (value) {
-    case "ASCENDING":
-      return "↑ Ascendente";
-
-    case "DESCENDING":
-      return "↓ Descendente";
-
-    case "STABLE":
-      return "→ Estable";
-
-    default:
-      return "—";
+  if (value === "ASCENDING") {
+    return "↑ Ascendente";
   }
+
+  if (value === "DESCENDING") {
+    return "↓ Descendente";
+  }
+
+  return "→ Estable";
 }
 
 function trackingLineLabel(
-  value:
-    | string
-    | null
-    | undefined
+  value: string | null | undefined
 ) {
   switch (value) {
     case "1_FICHAR":
@@ -248,91 +196,6 @@ function trackingLineLabel(
   }
 }
 
-function lineScore(
-  value:
-    | string
-    | null
-    | undefined
-) {
-  switch (value) {
-    case "1_FICHAR":
-      return 10;
-
-    case "JOVEN_PROMESA":
-      return 9;
-
-    case "2_SEGUIR":
-      return 8;
-
-    case "3_VER_MAS_ADELANTE":
-      return 5;
-
-    case "4_DESCARTAR":
-      return 2;
-
-    default:
-      return 5;
-  }
-}
-
-function priorityLabel(
-  value:
-    | number
-    | null
-    | undefined
-) {
-  if (
-    value === null ||
-    value === undefined
-  ) {
-    return "Sin calcular";
-  }
-
-  if (value >= 9) {
-    return "Muy alta";
-  }
-
-  if (value >= 8) {
-    return "Alta";
-  }
-
-  if (value >= 6.5) {
-    return "Media";
-  }
-
-  if (value >= 5) {
-    return "Seguimiento";
-  }
-
-  return "Baja";
-}
-
-function daysSince(
-  value:
-    | string
-    | null
-    | undefined
-) {
-  if (!value) {
-    return null;
-  }
-
-  const date =
-    new Date(value);
-
-  const now =
-    new Date();
-
-  const difference =
-    now.getTime() -
-    date.getTime();
-
-  return Math.floor(
-    difference /
-      (1000 * 60 * 60 * 24)
-  );
-}
-
 export default function PlayerPage() {
   const params =
     useParams<{
@@ -340,17 +203,10 @@ export default function PlayerPage() {
     }>();
 
   const [player, setPlayer] =
-    useState<Player | null>(
-      null
-    );
+    useState<Player | null>(null);
 
-  const [
-    tracking,
-    setTracking,
-  ] =
-    useState<Tracking | null>(
-      null
-    );
+  const [tracking, setTracking] =
+    useState<Tracking | null>(null);
 
   const [reports, setReports] =
     useState<Report[]>([]);
@@ -362,9 +218,13 @@ export default function PlayerPage() {
     reportScores,
     setReportScores,
   ] =
-    useState<ReportScore[]>(
-      []
-    );
+    useState<ReportScore[]>([]);
+
+  const [
+    selectedMetric,
+    setSelectedMetric,
+  ] =
+    useState("GLOBAL");
 
   const [loading, setLoading] =
     useState(true);
@@ -393,131 +253,136 @@ export default function PlayerPage() {
       return;
     }
 
-    const {
-      data: playerData,
-      error: playerError,
-    } =
-      await supabase
-        .from("players")
-        .select(`
-          id,
-          internal_code,
-          full_name,
-          birth_date,
-          nationality,
-          position,
-          specific_position,
-          preferred_foot,
-          height_cm,
-          weight_kg,
-          clubs:current_club_id (
-            name
+    const [
+      playerResponse,
+      trackingResponse,
+      reportsResponse,
+      metricsResponse,
+    ] =
+      await Promise.all([
+        supabase
+          .from("players")
+          .select(`
+            id,
+            internal_code,
+            full_name,
+            birth_date,
+            nationality,
+            position,
+            specific_position,
+            preferred_foot,
+            height_cm,
+            weight_kg,
+            clubs:current_club_id (
+              name
+            )
+          `)
+          .eq(
+            "id",
+            params.id
           )
-        `)
-        .eq(
-          "id",
-          params.id
-        )
-        .single();
+          .single(),
 
-    if (playerError) {
+        supabase
+          .from(
+            "player_tracking_metadata"
+          )
+          .select("*")
+          .eq(
+            "player_id",
+            params.id
+          )
+          .maybeSingle(),
+
+        supabase
+          .from(
+            "scouting_reports"
+          )
+          .select(`
+            id,
+            report_date,
+            global_score,
+            tracking_line,
+            general_observation,
+            minutes_observed
+          `)
+          .eq(
+            "player_id",
+            params.id
+          )
+          .eq(
+            "report_status",
+            "FINAL"
+          )
+          .order(
+            "report_date",
+            {
+              ascending: true,
+            }
+          ),
+
+        supabase
+          .from(
+            "evaluation_metrics"
+          )
+          .select(`
+            id,
+            code,
+            group_name,
+            label,
+            sort_order
+          `)
+          .eq(
+            "position",
+            "GK"
+          )
+          .eq(
+            "active",
+            true
+          )
+          .order(
+            "sort_order",
+            {
+              ascending: true,
+            }
+          ),
+      ]);
+
+    if (
+      playerResponse.error
+    ) {
       setErrorMessage(
-        playerError.message
+        playerResponse.error
+          .message
       );
 
       setLoading(false);
+
       return;
     }
 
-    const {
-      data: trackingData,
-    } =
-      await supabase
-        .from(
-          "player_tracking_metadata"
-        )
-        .select("*")
-        .eq(
-          "player_id",
-          params.id
-        )
-        .maybeSingle();
-
-    const {
-      data: reportsData,
-      error: reportsError,
-    } =
-      await supabase
-        .from(
-          "scouting_reports"
-        )
-        .select(`
-          id,
-          report_date,
-          global_score,
-          tracking_line,
-          general_observation,
-          minutes_observed
-        `)
-        .eq(
-          "player_id",
-          params.id
-        )
-        .eq(
-          "report_status",
-          "FINAL"
-        )
-        .order(
-          "report_date",
-          {
-            ascending: false,
-          }
-        );
-
-    if (reportsError) {
+    if (
+      reportsResponse.error
+    ) {
       setErrorMessage(
-        reportsError.message
+        reportsResponse.error
+          .message
       );
     }
 
-    const {
-      data: metricData,
-    } =
-      await supabase
-        .from(
-          "evaluation_metrics"
-        )
-        .select(`
-          id,
-          code,
-          group_name,
-          label,
-          sort_order
-        `)
-        .eq(
-          "position",
-          "GK"
-        )
-        .eq(
-          "active",
-          true
-        )
-        .order(
-          "sort_order",
-          {
-            ascending: true,
-          }
-        );
+    const loadedReports =
+      (
+        reportsResponse.data ||
+        []
+      ) as Report[];
 
     const reportIds =
-      (
-        reportsData || []
-      ).map(
+      loadedReports.map(
         (report) =>
           report.id
       );
 
-    let scoresData:
+    let loadedScores:
       ReportScore[] = [];
 
     if (
@@ -526,6 +391,7 @@ export default function PlayerPage() {
     ) {
       const {
         data,
+        error,
       } =
         await supabase
           .from(
@@ -541,31 +407,40 @@ export default function PlayerPage() {
             reportIds
           );
 
-      scoresData =
-        (data ||
-          []) as ReportScore[];
+      if (
+        error
+      ) {
+        setErrorMessage(
+          error.message
+        );
+      } else {
+        loadedScores =
+          (data ||
+            []) as ReportScore[];
+      }
     }
 
     setPlayer(
-      playerData as unknown as Player
+      playerResponse.data as unknown as Player
     );
 
     setTracking(
-      trackingData as Tracking | null
+      trackingResponse.data as Tracking | null
     );
 
     setReports(
-      (reportsData ||
-        []) as Report[]
+      loadedReports
     );
 
     setMetrics(
-      (metricData ||
-        []) as Metric[]
+      (
+        metricsResponse.data ||
+        []
+      ) as Metric[]
     );
 
     setReportScores(
-      scoresData
+      loadedScores
     );
 
     setLoading(false);
@@ -581,246 +456,17 @@ export default function PlayerPage() {
       [player]
     );
 
-  const currentLevel =
-    useMemo(() => {
-      return (
-        tracking
-          ?.current_level_score ??
-        tracking
-          ?.avg_global_score ??
-        null
-      );
-    }, [tracking]);
+  const reportCount =
+    tracking
+      ?.reports_count ??
+    reports.length;
 
-  /*
-   * POTENTIAL PROVISIONAL
-   *
-   * No intenta reemplazar
-   * el criterio humano.
-   *
-   * Current Level
-   * + edad
-   * + talla GK
-   * + tendencia.
-   */
-  const potential =
-    useMemo(() => {
-      if (
-        currentLevel ===
-        null
-      ) {
-        return null;
-      }
-
-      let modifier = 0;
-
-      if (
-        age !== null
-      ) {
-        if (age <= 18) {
-          modifier += 0.9;
-        } else if (
-          age <= 20
-        ) {
-          modifier += 0.7;
-        } else if (
-          age <= 22
-        ) {
-          modifier += 0.5;
-        } else if (
-          age <= 25
-        ) {
-          modifier += 0.25;
-        } else if (
-          age <= 28
-        ) {
-          modifier += 0.1;
-        } else if (
-          age <= 31
-        ) {
-          modifier -= 0.1;
-        } else {
-          modifier -= 0.3;
-        }
-      }
-
-      if (
-        player?.position ===
-        "GK"
-      ) {
-        const height =
-          player.height_cm;
-
-        if (
-          height !== null
-        ) {
-          if (
-            height >= 195
-          ) {
-            modifier += 0.2;
-          } else if (
-            height >= 190
-          ) {
-            modifier += 0.1;
-          } else if (
-            height < 185
-          ) {
-            modifier -= 0.2;
-          }
-        }
-      }
-
-      if (
-        tracking?.trend ===
-        "ASCENDING"
-      ) {
-        modifier += 0.2;
-      }
-
-      if (
-        tracking?.trend ===
-        "DESCENDING"
-      ) {
-        modifier -= 0.2;
-      }
-
-      return clamp(
-        currentLevel +
-          modifier
-      );
-    }, [
-      currentLevel,
-      age,
-      player,
-      tracking,
-    ]);
-
-  const consistency =
-    useMemo(() => {
-      if (
-        (
-          tracking
-            ?.reports_count ??
-          0
-        ) < 2
-      ) {
-        return null;
-      }
-
-      return (
-        tracking
-          ?.consistency_score ??
-        null
-      );
-    }, [tracking]);
-
-  const recruitmentPriority =
-    useMemo(() => {
-      if (
-        currentLevel ===
-        null ||
-        potential ===
-        null
-      ) {
-        return null;
-      }
-
-      const latestLine =
-        reports[0]
-          ?.tracking_line;
-
-      const consistencyValue =
-        consistency ??
-        currentLevel;
-
-      const result =
-        currentLevel *
-          0.45 +
-        potential *
-          0.3 +
-        consistencyValue *
-          0.1 +
-        lineScore(
-          latestLine
-        ) *
-          0.15;
-
-      return clamp(
-        result
-      );
-    }, [
-      currentLevel,
-      potential,
-      consistency,
-      reports,
-    ]);
-
-  const observationPriority =
-    useMemo(() => {
-      if (
-        potential ===
-        null
-      ) {
-        return null;
-      }
-
-      const evidence =
-        evidenceNeed(
-          tracking
-            ?.evidence_level
-        );
-
-      const days =
-        daysSince(
-          tracking
-            ?.last_observed_at
-        );
-
-      let recencyNeed = 5;
-
-      if (
-        days !== null
-      ) {
-        if (
-          days >= 90
-        ) {
-          recencyNeed = 10;
-        } else if (
-          days >= 60
-        ) {
-          recencyNeed = 8;
-        } else if (
-          days >= 30
-        ) {
-          recencyNeed = 6;
-        } else if (
-          days >= 14
-        ) {
-          recencyNeed = 4;
-        } else {
-          recencyNeed = 2;
-        }
-      }
-
-      const result =
-        potential *
-          0.45 +
-        evidence *
-          0.35 +
-        recencyNeed *
-          0.2;
-
-      return clamp(
-        result
-      );
-    }, [
-      potential,
-      tracking,
-    ]);
+  const provisional =
+    reportCount < 4;
 
   const metricSummaries =
     useMemo(() => {
-      const summaries:
+      const result:
         MetricSummary[] =
         [];
 
@@ -847,7 +493,8 @@ export default function PlayerPage() {
               );
 
           if (
-            !values.length
+            values.length ===
+            0
           ) {
             return;
           }
@@ -864,72 +511,207 @@ export default function PlayerPage() {
             ) /
             values.length;
 
-          summaries.push({
-            metric_id:
+          result.push({
+            id:
               metric.id,
-
-            code:
-              metric.code,
 
             label:
               metric.label,
 
-            group_name:
-              metric.group_name,
-
             average,
 
-            count:
-              values.length,
+            sort_order:
+              metric.sort_order,
           });
         }
       );
 
-      return summaries.sort(
-        (a, b) =>
-          b.average -
-          a.average
-      );
+      return result;
     }, [
       metrics,
       reportScores,
     ]);
 
   const strengths =
-    useMemo(
-      () =>
-        metricSummaries
-          .filter(
-            (item) =>
-              item.average >=
-              7
-          )
-          .slice(
-            0,
-            3
-          ),
-      [metricSummaries]
-    );
+    useMemo(() => {
+      return [
+        ...metricSummaries,
+      ]
+        .filter(
+          (item) =>
+            item.average >=
+            7
+        )
+        .sort(
+          (a, b) =>
+            b.average -
+            a.average
+        )
+        .slice(
+          0,
+          3
+        );
+    }, [
+      metricSummaries,
+    ]);
 
   const developmentAreas =
+    useMemo(() => {
+      return [
+        ...metricSummaries,
+      ]
+        .filter(
+          (item) =>
+            item.average <
+            7
+        )
+        .sort(
+          (a, b) =>
+            a.average -
+            b.average
+        )
+        .slice(
+          0,
+          3
+        );
+    }, [
+      metricSummaries,
+    ]);
+
+  /*
+   * CURVA LONGITUDINAL
+   *
+   * valor:
+   * nota del partido
+   *
+   * promedio:
+   * media acumulada
+   */
+  const chartData =
+    useMemo(() => {
+      let cumulativeTotal =
+        0;
+
+      let cumulativeCount =
+        0;
+
+      return reports.map(
+        (
+          report,
+          index
+        ) => {
+          let value:
+            number | null =
+            null;
+
+          if (
+            selectedMetric ===
+            "GLOBAL"
+          ) {
+            if (
+              report.global_score !==
+              null
+            ) {
+              value =
+                Number(
+                  report.global_score
+                );
+            }
+          } else {
+            const score =
+              reportScores.find(
+                (row) =>
+                  row.report_id ===
+                    report.id &&
+                  row.metric_id ===
+                    selectedMetric
+              );
+
+            if (score) {
+              value =
+                Number(
+                  score.score
+                );
+            }
+          }
+
+          if (
+            value !==
+              null &&
+            !Number.isNaN(
+              value
+            )
+          ) {
+            cumulativeTotal +=
+              value;
+
+            cumulativeCount++;
+          }
+
+          const cumulativeAverage =
+            cumulativeCount >
+            0
+              ? cumulativeTotal /
+                cumulativeCount
+              : null;
+
+          return {
+            partido:
+              `P${index + 1}`,
+
+            fecha:
+              report.report_date,
+
+            valor:
+              value,
+
+            promedio:
+              cumulativeAverage !==
+              null
+                ? Number(
+                    cumulativeAverage.toFixed(
+                      2
+                    )
+                  )
+                : null,
+          };
+        }
+      );
+    }, [
+      reports,
+      reportScores,
+      selectedMetric,
+    ]);
+
+  const selectedMetricLabel =
+    useMemo(() => {
+      if (
+        selectedMetric ===
+        "GLOBAL"
+      ) {
+        return "Score global";
+      }
+
+      return (
+        metrics.find(
+          (metric) =>
+            metric.id ===
+            selectedMetric
+        )?.label ||
+        "Variable"
+      );
+    }, [
+      selectedMetric,
+      metrics,
+    ]);
+
+  const reportsDescending =
     useMemo(
       () =>
-        [...metricSummaries]
-          .sort(
-            (a, b) =>
-              a.average -
-              b.average
-          )
-          .filter(
-            (item) =>
-              item.average <
-              7
-          )
-          .slice(
-            0,
-            3
-          ),
-      [metricSummaries]
+        [
+          ...reports,
+        ].reverse(),
+      [reports]
     );
 
   if (loading) {
@@ -943,6 +725,7 @@ export default function PlayerPage() {
   if (!player) {
     return (
       <div className="card">
+
         <h1 className="text-2xl font-black">
           Jugador no disponible
         </h1>
@@ -958,6 +741,7 @@ export default function PlayerPage() {
         >
           Volver
         </a>
+
       </div>
     );
   }
@@ -968,23 +752,29 @@ export default function PlayerPage() {
       {/* CABECERA */}
 
       <section className="card">
+
         <div className="flex flex-wrap items-start justify-between gap-6">
 
           <div>
+
             <div className="text-sm text-slate-400">
               {player.internal_code ||
                 "Sin código interno"}
             </div>
 
             <h1 className="mt-1 text-4xl font-black">
-              {player.full_name}
+              {
+                player.full_name
+              }
             </h1>
 
             <p className="mt-3 text-slate-300">
+
               {player.specific_position ||
                 player.position}
 
-              {age !== null &&
+              {age !==
+                null &&
                 ` · ${age} años`}
 
               {player.height_cm &&
@@ -992,9 +782,11 @@ export default function PlayerPage() {
 
               {player.preferred_foot &&
                 ` · ${player.preferred_foot}`}
+
             </p>
 
             <p className="mt-2 text-sm text-slate-500">
+
               {player.nationality ||
                 "Nacionalidad sin registrar"}
 
@@ -1002,7 +794,9 @@ export default function PlayerPage() {
 
               {player.clubs?.name ||
                 "Club sin registrar"}
+
             </p>
+
           </div>
 
           <a
@@ -1013,73 +807,127 @@ export default function PlayerPage() {
           </a>
 
         </div>
+
       </section>
 
-      {/* INDICADORES PRINCIPALES */}
+      {/* EVIDENCIA PROVISIONAL */}
+
+      {provisional && (
+        <section className="rounded-xl border border-amber-700 bg-amber-950/20 p-5">
+
+          <div className="font-black">
+            ⚠ Evaluación provisional
+          </div>
+
+          <p className="mt-2 text-sm leading-6 text-slate-300">
+
+            Se registran{" "}
+            <strong>
+              {reportCount}
+            </strong>{" "}
+            partido
+            {reportCount ===
+            1
+              ? ""
+              : "s"}{" "}
+            observado
+            {reportCount ===
+            1
+              ? ""
+              : "s"}{" "}
+            y{" "}
+            <strong>
+              {tracking
+                ?.minutes_observed ??
+                0}
+            </strong>{" "}
+            minutos.
+
+            {" "}
+
+            Nivel de evidencia:{" "}
+            <strong>
+              {evidenceLabel(
+                tracking
+                  ?.evidence_level
+              )}
+            </strong>.
+
+            {" "}
+
+            Se recomienda continuar
+            la observación antes de
+            considerar la valoración
+            como consolidada.
+
+          </p>
+
+        </section>
+      )}
+
+      {/* INDICADORES */}
 
       <section className="grid gap-4 md:grid-cols-5">
 
         <ScoreCard
           label="Current Level"
-          value={currentLevel}
-          help="Nivel acumulado"
+          value={
+            tracking
+              ?.current_level_score ??
+            tracking
+              ?.avg_global_score
+          }
         />
 
         <ScoreCard
           label="Potential"
-          value={potential}
-          help="Provisional"
+          value={
+            tracking
+              ?.potential_score
+          }
         />
 
         <ScoreCard
           label="Consistency"
-          value={consistency}
-          help={
-            (
-              tracking?.reports_count ??
-              0
-            ) < 2
+          value={
+            reportCount >=
+            2
+              ? tracking
+                  ?.consistency_score
+              : null
+          }
+          note={
+            reportCount <
+            2
               ? "Requiere 2+ informes"
-              : "Regularidad"
+              : undefined
           }
         />
 
         <ScoreCard
           label="Recruitment"
           value={
-            recruitmentPriority
-          }
-          help={
-            priorityLabel(
-              recruitmentPriority
-            )
+            tracking
+              ?.recruitment_priority
           }
         />
 
         <ScoreCard
           label="Observation"
           value={
-            observationPriority
-          }
-          help={
-            priorityLabel(
-              observationPriority
-            )
+            tracking
+              ?.observation_priority
           }
         />
 
       </section>
-
-      {/* EVIDENCIA */}
 
       <section className="grid gap-4 md:grid-cols-5">
 
         <InfoCard
           label="Informes"
           value={String(
-            tracking
-              ?.reports_count ??
-              reports.length
+            reportCount
           )}
         />
 
@@ -1122,7 +970,212 @@ export default function PlayerPage() {
 
       </section>
 
-      {/* FORTALEZAS / DESARROLLO */}
+      {/* EVOLUCIÓN */}
+
+      <section className="card">
+
+        <div className="flex flex-wrap items-end justify-between gap-5">
+
+          <div>
+
+            <h2 className="text-xl font-black">
+              Evolución longitudinal
+            </h2>
+
+            <p className="mt-1 text-sm text-slate-400">
+              Rendimiento partido a partido y promedio acumulado.
+            </p>
+
+          </div>
+
+          <div>
+
+            <label className="label">
+              Variable
+            </label>
+
+            <select
+              className="input min-w-64"
+              value={
+                selectedMetric
+              }
+              onChange={(
+                event
+              ) =>
+                setSelectedMetric(
+                  event.target
+                    .value
+                )
+              }
+            >
+
+              <option value="GLOBAL">
+                Score global
+              </option>
+
+              {metrics.map(
+                (
+                  metric
+                ) => (
+                  <option
+                    key={
+                      metric.id
+                    }
+                    value={
+                      metric.id
+                    }
+                  >
+                    {
+                      metric.label
+                    }
+                  </option>
+                )
+              )}
+
+            </select>
+
+          </div>
+
+        </div>
+
+        <div className="mt-6">
+
+          <div className="mb-4 text-sm text-slate-400">
+            Variable seleccionada:{" "}
+            <strong className="text-slate-200">
+              {
+                selectedMetricLabel
+              }
+            </strong>
+          </div>
+
+          {chartData.length ===
+          0 ? (
+
+            <div className="rounded-xl border border-slate-800 p-6 text-sm text-slate-500">
+              Todavía no hay evaluaciones suficientes para graficar.
+            </div>
+
+          ) : (
+
+            <div className="h-80 w-full">
+
+              <ResponsiveContainer
+                width="100%"
+                height="100%"
+              >
+
+                <LineChart
+                  data={
+                    chartData
+                  }
+                  margin={{
+                    top: 10,
+                    right: 20,
+                    left: 0,
+                    bottom: 10,
+                  }}
+                >
+
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    opacity={
+                      0.2
+                    }
+                  />
+
+                  <XAxis
+                    dataKey="partido"
+                  />
+
+                  <YAxis
+                    domain={[
+                      1,
+                      10,
+                    ]}
+                    ticks={[
+                      1,
+                      2,
+                      3,
+                      4,
+                      5,
+                      6,
+                      7,
+                      8,
+                      9,
+                      10,
+                    ]}
+                  />
+
+                  <Tooltip
+                    formatter={(
+                      value:
+                        any,
+                      name:
+                        any
+                    ) => [
+                      Number(
+                        value
+                      ).toFixed(
+                        2
+                      ),
+
+                      name ===
+                      "valor"
+                        ? selectedMetricLabel
+                        : "Promedio acumulado",
+                    ]}
+                  />
+
+                  <Legend
+                    formatter={(
+                      value
+                    ) =>
+                      value ===
+                      "valor"
+                        ? selectedMetricLabel
+                        : "Promedio acumulado"
+                    }
+                  />
+
+                  <Line
+                    type="monotone"
+                    dataKey="valor"
+                    strokeWidth={
+                      3
+                    }
+                    connectNulls
+                    dot={{
+                      r: 5,
+                    }}
+                  />
+
+                  <Line
+                    type="monotone"
+                    dataKey="promedio"
+                    strokeWidth={
+                      2
+                    }
+                    strokeDasharray="6 6"
+                    connectNulls
+                    dot={{
+                      r: 3,
+                    }}
+                  />
+
+                </LineChart>
+
+              </ResponsiveContainer>
+
+            </div>
+
+          )}
+
+        </div>
+
+      </section>
+
+      {/* FORTALEZAS */}
 
       <section className="grid gap-4 md:grid-cols-2">
 
@@ -1150,7 +1203,7 @@ export default function PlayerPage() {
                 ) => (
                   <MetricRow
                     key={
-                      item.metric_id
+                      item.id
                     }
                     label={
                       item.label
@@ -1182,7 +1235,7 @@ export default function PlayerPage() {
             {developmentAreas.length ===
             0 ? (
               <p className="text-sm text-slate-500">
-                Sin debilidades destacadas con la evidencia actual.
+                Sin aspectos destacados con la evidencia actual.
               </p>
             ) : (
               developmentAreas.map(
@@ -1191,7 +1244,7 @@ export default function PlayerPage() {
                 ) => (
                   <MetricRow
                     key={
-                      item.metric_id
+                      item.id
                     }
                     label={
                       item.label
@@ -1210,7 +1263,7 @@ export default function PlayerPage() {
 
       </section>
 
-      {/* PERFIL TÉCNICO */}
+      {/* PERFIL ACUMULADO */}
 
       <section className="card">
 
@@ -1219,71 +1272,39 @@ export default function PlayerPage() {
         </h2>
 
         <p className="mt-1 text-sm text-slate-400">
-          Promedio de todas las evaluaciones registradas.
+          Promedio de cada variable en todos los partidos observados.
         </p>
 
-        {metricSummaries.length ===
-        0 ? (
-          <p className="mt-5 text-sm text-slate-500">
-            Todavía no existen evaluaciones técnicas.
-          </p>
-        ) : (
-          <div className="mt-6 grid gap-4 md:grid-cols-2">
+        <div className="mt-6 grid gap-4 md:grid-cols-2">
 
-            {metricSummaries
-              .slice()
-              .sort(
-                (a, b) => {
-                  const metricA =
-                    metrics.find(
-                      (
-                        metric
-                      ) =>
-                        metric.id ===
-                        a.metric_id
-                    );
-
-                  const metricB =
-                    metrics.find(
-                      (
-                        metric
-                      ) =>
-                        metric.id ===
-                        b.metric_id
-                    );
-
-                  return (
-                    (
-                      metricA?.sort_order ??
-                      0
-                    ) -
-                    (
-                      metricB?.sort_order ??
-                      0
-                    )
-                  );
-                }
+          {[...metricSummaries]
+            .sort(
+              (
+                a,
+                b
+              ) =>
+                a.sort_order -
+                b.sort_order
+            )
+            .map(
+              (
+                item
+              ) => (
+                <MetricRow
+                  key={
+                    item.id
+                  }
+                  label={
+                    item.label
+                  }
+                  value={
+                    item.average
+                  }
+                />
               )
-              .map(
-                (
-                  item
-                ) => (
-                  <MetricRow
-                    key={
-                      item.metric_id
-                    }
-                    label={
-                      item.label
-                    }
-                    value={
-                      item.average
-                    }
-                  />
-                )
-              )}
+            )}
 
-          </div>
-        )}
+        </div>
 
       </section>
 
@@ -1299,19 +1320,20 @@ export default function PlayerPage() {
           Evaluaciones ordenadas desde la más reciente.
         </p>
 
-        {reports.length ===
+        {reportsDescending.length ===
         0 ? (
-          <div className="mt-6 rounded-xl border border-slate-800 p-5">
 
+          <div className="mt-6 rounded-xl border border-slate-800 p-5">
             <p className="text-slate-400">
               Todavía no hay informes cargados.
             </p>
-
           </div>
+
         ) : (
+
           <div className="mt-6 space-y-4">
 
-            {reports.map(
+            {reportsDescending.map(
               (
                 report
               ) => (
@@ -1327,20 +1349,25 @@ export default function PlayerPage() {
                     <div>
 
                       <div className="font-bold">
+
                         {new Date(
                           `${report.report_date}T12:00:00`
                         ).toLocaleDateString(
                           "es-AR"
                         )}
+
                       </div>
 
                       <div className="mt-1 text-sm text-slate-500">
+
                         {trackingLineLabel(
                           report.tracking_line
                         )}
+
                       </div>
 
-                      {report.minutes_observed && (
+                      {report.minutes_observed !==
+                        null && (
                         <div className="mt-1 text-xs text-slate-600">
                           {report.minutes_observed} minutos observados
                         </div>
@@ -1365,9 +1392,13 @@ export default function PlayerPage() {
                   </div>
 
                   {report.general_observation && (
+
                     <p className="mt-5 max-w-4xl text-sm leading-6 text-slate-300">
-                      {report.general_observation}
+                      {
+                        report.general_observation
+                      }
                     </p>
+
                   )}
 
                 </div>
@@ -1375,6 +1406,7 @@ export default function PlayerPage() {
             )}
 
           </div>
+
         )}
 
       </section>
@@ -1386,13 +1418,16 @@ export default function PlayerPage() {
 function ScoreCard({
   label,
   value,
-  help,
+  note,
 }: {
   label: string;
+
   value:
     | number
-    | null;
-  help?: string;
+    | null
+    | undefined;
+
+  note?: string;
 }) {
   return (
     <div className="card">
@@ -1407,19 +1442,17 @@ function ScoreCard({
         )}
       </div>
 
-      <div className="mt-1 text-xs text-slate-500">
-        {value !== null
-          ? "/10"
-          : help ||
-            "Sin calcular"}
-      </div>
+      <div className="text-xs text-slate-500">
 
-      {value !== null &&
-        help && (
-          <div className="mt-2 text-xs text-slate-400">
-            {help}
-          </div>
-        )}
+        {value ===
+          null ||
+        value ===
+          undefined
+          ? note ||
+            "Sin calcular"
+          : "/10"}
+
+      </div>
 
     </div>
   );
@@ -1476,10 +1509,10 @@ function MetricRow({
         <div
           className="h-full rounded-full bg-slate-300"
           style={{
-            width: `${Math.min(
-              100,
-              Math.max(
-                0,
+            width: `${Math.max(
+              0,
+              Math.min(
+                100,
                 value * 10
               )
             )}%`,
