@@ -8,8 +8,11 @@ import {
 } from "react";
 
 import { useParams } from "next/navigation";
-
 import { supabase } from "../../../lib/supabase";
+
+/* =========================================================
+   TIPOS
+========================================================= */
 
 type VideoRow = {
   id: string;
@@ -96,8 +99,15 @@ type VideoEvent = {
   } | null;
 };
 
+type MetricEvidence =
+  | "NONE"
+  | "LOW"
+  | "MODERATE"
+  | "HIGH";
+
 type MetricPreEvaluation = {
   metric_id: string;
+
   code: string;
   label: string;
   group_name: string;
@@ -108,8 +118,12 @@ type MetricPreEvaluation = {
   positive_count: number;
   negative_count: number;
 
-  evidence: "NONE" | "LOW" | "MODERATE" | "HIGH";
+  evidence: MetricEvidence;
 };
+
+/* =========================================================
+   FUNCIONES AUXILIARES
+========================================================= */
 
 function formatSeconds(totalSeconds: number) {
   const safeSeconds = Math.max(
@@ -166,7 +180,10 @@ function matchLabel(
 }
 
 function statusLabel(
-  value: string | null | undefined
+  value:
+    | string
+    | null
+    | undefined
 ) {
   switch (value) {
     case "UNANALYZED":
@@ -188,12 +205,15 @@ function statusLabel(
       return "Error";
 
     default:
-      return value || "Sin estado";
+      return (
+        value ||
+        "Sin estado"
+      );
   }
 }
 
 function evidenceLabel(
-  value: MetricPreEvaluation["evidence"]
+  value: MetricEvidence
 ) {
   switch (value) {
     case "HIGH":
@@ -223,16 +243,17 @@ function getYouTubeEmbedUrl(
   return `https://www.youtube.com/embed/${video.external_video_id}`;
 }
 
+/* =========================================================
+   COMPONENTE PRINCIPAL
+========================================================= */
+
 export default function VideoDetailPage() {
   const params =
     useParams<{
       id: string;
     }>();
 
-  const [
-    video,
-    setVideo,
-  ] =
+  const [video, setVideo] =
     useState<VideoRow | null>(
       null
     );
@@ -241,19 +262,25 @@ export default function VideoDetailPage() {
     eventTypes,
     setEventTypes,
   ] =
-    useState<EventType[]>([]);
+    useState<EventType[]>(
+      []
+    );
 
   const [
     metrics,
     setMetrics,
   ] =
-    useState<Metric[]>([]);
+    useState<Metric[]>(
+      []
+    );
 
   const [
     events,
     setEvents,
   ] =
-    useState<VideoEvent[]>([]);
+    useState<VideoEvent[]>(
+      []
+    );
 
   const [
     selectedEventType,
@@ -308,6 +335,10 @@ export default function VideoDetailPage() {
     setMessage,
   ] =
     useState("");
+
+  /* =======================================================
+     CARGA INICIAL
+  ======================================================= */
 
   useEffect(() => {
     loadData();
@@ -473,6 +504,30 @@ export default function VideoDetailPage() {
       return;
     }
 
+    if (
+      eventTypesResponse.error
+    ) {
+      setMessage(
+        eventTypesResponse.error.message
+      );
+    }
+
+    if (
+      metricsResponse.error
+    ) {
+      setMessage(
+        metricsResponse.error.message
+      );
+    }
+
+    if (
+      eventsResponse.error
+    ) {
+      setMessage(
+        eventsResponse.error.message
+      );
+    }
+
     const loadedMetrics =
       (
         metricsResponse.data ||
@@ -505,22 +560,22 @@ export default function VideoDetailPage() {
     );
 
     /*
-     * Inicialización correcta:
-     * ya tenemos las métricas cargadas localmente.
+     * Inicializamos la primera acción
+     * y su métrica asociada.
      */
     if (
       loadedEventTypes.length >
       0
     ) {
-      const first =
+      const firstEvent =
         loadedEventTypes[0];
 
       setSelectedEventType(
-        first.code
+        firstEvent.code
       );
 
       setPositiveEvent(
-        first.positive_default ??
+        firstEvent.positive_default ??
           true
       );
 
@@ -530,7 +585,7 @@ export default function VideoDetailPage() {
             metric
           ) =>
             metric.code ===
-            first.metric_code
+            firstEvent.metric_code
         );
 
       setSelectedMetricId(
@@ -541,6 +596,10 @@ export default function VideoDetailPage() {
 
     setLoading(false);
   }
+
+  /* =======================================================
+     CAMBIO DE TIPO DE EVENTO
+  ======================================================= */
 
   function handleEventTypeChange(
     code: string
@@ -582,20 +641,27 @@ export default function VideoDetailPage() {
     );
   }
 
+  /* =======================================================
+     GUARDAR EVENTO
+  ======================================================= */
+
   async function handleSaveEvent(
     event:
       FormEvent<HTMLFormElement>
   ) {
     event.preventDefault();
 
+    if (!video) {
+      setMessage(
+        "No se encontró el video."
+      );
+      return;
+    }
+
     const form =
       new FormData(
         event.currentTarget
       );
-
-    if (!video) {
-      return;
-    }
 
     const eventType =
       eventTypes.find(
@@ -732,10 +798,13 @@ export default function VideoDetailPage() {
         throw error;
       }
 
+      const newEvent =
+        data as unknown as VideoEvent;
+
       const updatedEvents =
         [
           ...events,
-          data as unknown as VideoEvent,
+          newEvent,
         ].sort(
           (
             a,
@@ -753,28 +822,45 @@ export default function VideoDetailPage() {
         updatedEvents.length
       );
 
+      /*
+       * Avanza un segundo para facilitar
+       * el registro consecutivo.
+       */
       setTimestamp(
-        timestamp + 1
+        (
+          current
+        ) =>
+          current + 1
       );
 
       setEventScore(5);
 
+      event.currentTarget.reset();
+
       setSavingEvent(false);
     } catch (
-      error: any
+      error: unknown
     ) {
       console.error(
         error
       );
 
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "No se pudo registrar el evento.";
+
       setMessage(
-        error?.message ||
-          "No se pudo registrar el evento."
+        errorMessage
       );
 
       setSavingEvent(false);
     }
   }
+
+  /* =======================================================
+     ESTADO DEL ANÁLISIS
+  ======================================================= */
 
   async function updateAnalysisState(
     eventsCount: number
@@ -783,6 +869,9 @@ export default function VideoDetailPage() {
       return;
     }
 
+    const currentVideo =
+      video;
+
     const nextStatus =
       eventsCount >
       0
@@ -790,53 +879,83 @@ export default function VideoDetailPage() {
         : "UNANALYZED";
 
     const progress =
-      Math.min(
-        90,
-        Math.max(
-          10,
-          eventsCount * 5
-        )
+      eventsCount ===
+      0
+        ? 0
+        : Math.min(
+            90,
+            Math.max(
+              10,
+              eventsCount * 5
+            )
+          );
+
+    const {
+      error:
+        videoUpdateError,
+    } =
+      await supabase
+        .from("videos")
+        .update({
+          analysis_status:
+            nextStatus,
+
+          processing_progress:
+            progress,
+
+          updated_at:
+            new Date()
+              .toISOString(),
+        })
+        .eq(
+          "id",
+          currentVideo.id
+        );
+
+    if (
+      videoUpdateError
+    ) {
+      console.error(
+        videoUpdateError
       );
+    }
 
-    await supabase
-      .from("videos")
-      .update({
-        analysis_status:
-          nextStatus,
+    const {
+      error:
+        jobUpdateError,
+    } =
+      await supabase
+        .from(
+          "video_analysis_jobs"
+        )
+        .update({
+          status:
+            eventsCount >
+            0
+              ? "PROCESSING"
+              : "PENDING",
 
-        processing_progress:
           progress,
 
-        updated_at:
-          new Date()
-            .toISOString(),
-      })
-      .eq(
-        "id",
-        video.id
+          events_detected:
+            eventsCount,
+
+          updated_at:
+            new Date()
+              .toISOString(),
+        })
+        .eq(
+          "video_id",
+          currentVideo.id
+        );
+
+    if (
+      jobUpdateError
+    ) {
+      console.error(
+        jobUpdateError
       );
-
-    await supabase
-      .from(
-        "video_analysis_jobs"
-      )
-      .update({
-        status:
-          "PROCESSING",
-
-        progress,
-
-        events_detected:
-          eventsCount,
-
-        updated_at:
-          new Date()
-            .toISOString(),
-      })
-      .eq(
-        "video_id",
-        video.id
-      );
+    }
 
     setVideo(
       (
@@ -856,83 +975,199 @@ export default function VideoDetailPage() {
     );
   }
 
+  /* =======================================================
+     PASAR A REVISIÓN
+  ======================================================= */
+
   async function markReview() {
     if (!video) {
       return;
     }
 
+    const currentVideo =
+      video;
+
     setUpdatingStatus(
       true
     );
 
-    await supabase
-      .from("videos")
-      .update({
+    try {
+      const {
+        error:
+          videoError,
+      } =
+        await supabase
+          .from("videos")
+          .update({
+            analysis_status:
+              "REVIEW",
+
+            processing_progress:
+              95,
+
+            updated_at:
+              new Date()
+                .toISOString(),
+          })
+          .eq(
+            "id",
+            currentVideo.id
+          );
+
+      if (videoError) {
+        throw videoError;
+      }
+
+      const {
+        error:
+          jobError,
+      } =
+        await supabase
+          .from(
+            "video_analysis_jobs"
+          )
+          .update({
+            status:
+              "REVIEW",
+
+            progress:
+              95,
+
+            events_detected:
+              events.length,
+
+            updated_at:
+              new Date()
+                .toISOString(),
+          })
+          .eq(
+            "video_id",
+            currentVideo.id
+          );
+
+      if (jobError) {
+        console.error(
+          jobError
+        );
+      }
+
+      setVideo({
+        ...currentVideo,
+
         analysis_status:
           "REVIEW",
 
         processing_progress:
           95,
-
-        updated_at:
-          new Date()
-            .toISOString(),
-      })
-      .eq(
-        "id",
-        video.id
+      });
+    } catch (
+      error: unknown
+    ) {
+      console.error(
+        error
       );
 
-    await supabase
-      .from(
-        "video_analysis_jobs"
-      )
-      .update({
-        status:
-          "REVIEW",
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "No se pudo actualizar el análisis.";
 
-        progress:
-          95,
-
-        events_detected:
-          events.length,
-
-        updated_at:
-          new Date()
-            .toISOString(),
-      })
-      .eq(
-        "video_id",
-        video.id
+      setMessage(
+        errorMessage
       );
-
-    setVideo({
-      ...video,
-
-      analysis_status:
-        "REVIEW",
-
-      processing_progress:
-        95,
-    });
-
-    setUpdatingStatus(
-      false
-    );
+    } finally {
+      setUpdatingStatus(
+        false
+      );
+    }
   }
+
+  /* =======================================================
+     COMPLETAR ANÁLISIS
+  ======================================================= */
 
   async function completeAnalysis() {
     if (!video) {
       return;
     }
 
+    const currentVideo =
+      video;
+
     setUpdatingStatus(
       true
     );
 
-    await supabase
-      .from("videos")
-      .update({
+    try {
+      const {
+        error:
+          videoError,
+      } =
+        await supabase
+          .from("videos")
+          .update({
+            analysis_status:
+              "COMPLETED",
+
+            processing_progress:
+              100,
+
+            human_validated:
+              true,
+
+            updated_at:
+              new Date()
+                .toISOString(),
+          })
+          .eq(
+            "id",
+            currentVideo.id
+          );
+
+      if (videoError) {
+        throw videoError;
+      }
+
+      const {
+        error:
+          jobError,
+      } =
+        await supabase
+          .from(
+            "video_analysis_jobs"
+          )
+          .update({
+            status:
+              "COMPLETED",
+
+            progress:
+              100,
+
+            events_detected:
+              events.length,
+
+            finished_at:
+              new Date()
+                .toISOString(),
+
+            updated_at:
+              new Date()
+                .toISOString(),
+          })
+          .eq(
+            "video_id",
+            currentVideo.id
+          );
+
+      if (jobError) {
+        console.error(
+          jobError
+        );
+      }
+
+      setVideo({
+        ...currentVideo,
+
         analysis_status:
           "COMPLETED",
 
@@ -941,60 +1176,32 @@ export default function VideoDetailPage() {
 
         human_validated:
           true,
-
-        updated_at:
-          new Date()
-            .toISOString(),
-      })
-      .eq(
-        "id",
-        video.id
+      });
+    } catch (
+      error: unknown
+    ) {
+      console.error(
+        error
       );
 
-    await supabase
-      .from(
-        "video_analysis_jobs"
-      )
-      .update({
-        status:
-          "COMPLETED",
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "No se pudo completar el análisis.";
 
-        progress:
-          100,
-
-        events_detected:
-          events.length,
-
-        finished_at:
-          new Date()
-            .toISOString(),
-
-        updated_at:
-          new Date()
-            .toISOString(),
-      })
-      .eq(
-        "video_id",
-        video.id
+      setMessage(
+        errorMessage
       );
-
-    setVideo({
-      ...video,
-
-      analysis_status:
-        "COMPLETED",
-
-      processing_progress:
-        100,
-
-      human_validated:
-        true,
-    });
-
-    setUpdatingStatus(
-      false
-    );
+    } finally {
+      setUpdatingStatus(
+        false
+      );
+    }
   }
+
+  /* =======================================================
+     ELIMINAR EVENTO
+  ======================================================= */
 
   async function deleteEvent(
     eventId: string
@@ -1047,17 +1254,10 @@ export default function VideoDetailPage() {
     );
   }
 
-  /*
-   * PRE-EVALUACIÓN
-   *
-   * Solamente usa eventos:
-   * - asociados a una métrica
-   * - con score válido
-   * - validados
-   *
-   * Si una métrica no tiene eventos,
-   * score = null.
-   */
+  /* =======================================================
+     PREEVALUACIÓN TÉCNICA
+  ======================================================= */
+
   const preEvaluation =
     useMemo<
       MetricPreEvaluation[]
@@ -1154,7 +1354,7 @@ export default function VideoDetailPage() {
             ).length;
 
           let evidence:
-            MetricPreEvaluation["evidence"] =
+            MetricEvidence =
             "LOW";
 
           if (
@@ -1210,12 +1410,16 @@ export default function VideoDetailPage() {
     ]);
 
   const metricsWithEvidence =
-    preEvaluation.filter(
-      (
-        item
-      ) =>
-        item.score !==
-        null
+    useMemo(
+      () =>
+        preEvaluation.filter(
+          (
+            item
+          ) =>
+            item.score !==
+            null
+        ),
+      [preEvaluation]
     );
 
   const preEvaluationScore =
@@ -1259,10 +1463,21 @@ export default function VideoDetailPage() {
       metricsWithEvidence,
     ]);
 
+  /* =======================================================
+     GENERAR INFORME DESDE VIDEO
+     CORREGIDO PARA TYPESCRIPT
+  ======================================================= */
+
   function generateReportFromVideo() {
-    if (
-      !video.player_id
-    ) {
+    if (!video) {
+      setMessage(
+        "No se encontró la información del video."
+      );
+
+      return;
+    }
+
+    if (!video.player_id) {
       setMessage(
         "El video no tiene un jugador asociado."
       );
@@ -1281,24 +1496,36 @@ export default function VideoDetailPage() {
       return;
     }
 
+    /*
+     * Después de comprobar player_id,
+     * lo guardamos en una constante.
+     *
+     * TypeScript ya lo considera string.
+     */
+    const playerId =
+      video.player_id;
+
+    const currentVideo =
+      video;
+
     const payload = {
       version: 1,
 
       video_id:
-        video.id,
+        currentVideo.id,
 
       player_id:
-        video.player_id,
+        playerId,
 
       match_date:
-        video.match_date,
+        currentVideo.match_date,
 
       competition:
-        video.competition_name,
+        currentVideo.competition_name,
 
       match_description:
         matchLabel(
-          video
+          currentVideo
         ),
 
       metrics:
@@ -1332,8 +1559,12 @@ export default function VideoDetailPage() {
     );
 
     window.location.href =
-      `/reports/new?player=${video.player_id}&video=${video.id}`;
+      `/reports/new?player=${playerId}&video=${currentVideo.id}`;
   }
+
+  /* =======================================================
+     DATOS DERIVADOS
+  ======================================================= */
 
   const youtubeEmbedUrl =
     useMemo(
@@ -1346,49 +1577,48 @@ export default function VideoDetailPage() {
       [video]
     );
 
-  const averageEventScore =
-    useMemo(() => {
-      const values =
-        events
-          .map(
-            (
-              item
-            ) =>
-              Number(
-                item.event_score
-              )
-          )
-          .filter(
-            (
-              value
-            ) =>
-              !Number.isNaN(
-                value
-              )
-          );
-
-      if (
-        values.length ===
-        0
-      ) {
-        return null;
-      }
-
-      return (
-        values.reduce(
+  const positiveCount =
+    useMemo(
+      () =>
+        events.filter(
           (
-            total,
-            value
+            item
           ) =>
-            total +
-            value,
-          0
-        ) /
-        values.length
-      );
-    }, [
-      events,
-    ]);
+            item.positive_event ===
+            true
+        ).length,
+      [events]
+    );
+
+  const negativeCount =
+    useMemo(
+      () =>
+        events.filter(
+          (
+            item
+          ) =>
+            item.positive_event ===
+            false
+        ).length,
+      [events]
+    );
+
+  const validatedCount =
+    useMemo(
+      () =>
+        events.filter(
+          (
+            item
+          ) =>
+            item.validated ===
+            true
+        ).length,
+      [events]
+    );
+
+  /* =======================================================
+     ESTADOS DE PANTALLA
+  ======================================================= */
 
   if (loading) {
     return (
@@ -1401,7 +1631,6 @@ export default function VideoDetailPage() {
   if (!video) {
     return (
       <div className="card">
-
         <h1 className="text-2xl font-black">
           Video no disponible
         </h1>
@@ -1417,20 +1646,22 @@ export default function VideoDetailPage() {
         >
           Volver
         </a>
-
       </div>
     );
   }
 
+  /* =======================================================
+     UI PRINCIPAL
+  ======================================================= */
+
   return (
     <div className="space-y-8">
 
+      {/* CABECERA */}
+
       <section className="card">
-
         <div className="flex flex-wrap items-start justify-between gap-6">
-
           <div>
-
             <div className="text-sm text-slate-400">
               Análisis audiovisual
             </div>
@@ -1450,15 +1681,15 @@ export default function VideoDetailPage() {
               {formatMatchDate(
                 video.match_date
               )}
+
               {" · "}
+
               {video.competition_name ||
                 "Competencia sin registrar"}
             </p>
-
           </div>
 
           <div className="text-right">
-
             <div className="text-xs text-slate-500">
               Estado
             </div>
@@ -1474,15 +1705,13 @@ export default function VideoDetailPage() {
                 0}
               %
             </div>
-
           </div>
-
         </div>
-
       </section>
 
-      <section className="grid gap-4 md:grid-cols-4">
+      {/* RESUMEN */}
 
+      <section className="grid gap-4 md:grid-cols-4">
         <InfoCard
           label="Partido"
           value={
@@ -1517,15 +1746,13 @@ export default function VideoDetailPage() {
               : "—"
           }
         />
-
       </section>
 
+      {/* VIDEO */}
+
       <section className="card">
-
-        <div className="flex flex-wrap justify-between gap-4">
-
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-
             <h2 className="text-xl font-black">
               Video
             </h2>
@@ -1535,65 +1762,65 @@ export default function VideoDetailPage() {
               {video.provider ||
                 "Externa"}
             </p>
-
           </div>
 
           <a
-            href={
-              video.url
-            }
+            href={video.url}
             target="_blank"
             rel="noreferrer"
             className="rounded-lg border border-slate-600 px-4 py-2 text-sm"
           >
             Abrir fuente
           </a>
-
         </div>
 
         {youtubeEmbedUrl ? (
-
-          <div className="mt-6 aspect-video overflow-hidden rounded-xl">
-
+          <div className="mt-6 aspect-video overflow-hidden rounded-xl border border-slate-800">
             <iframe
               src={
                 youtubeEmbedUrl
               }
+              title={
+                video.title ||
+                "Video de scouting"
+              }
               className="h-full w-full"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
               allowFullScreen
             />
-
           </div>
-
         ) : (
-
-          <div className="mt-6 rounded-xl border border-slate-800 p-5 text-sm text-slate-400">
-            Utilizá la fuente externa y registrá los timestamps manualmente.
+          <div className="mt-6 rounded-xl border border-slate-800 bg-slate-950/30 p-5 text-sm text-slate-400">
+            Esta fuente no puede reproducirse directamente dentro de Scout GK.
+            Abrí el video en otra pestaña y utilizá el timestamp manual.
           </div>
-
         )}
-
       </section>
 
-      <section className="card">
+      {/* REGISTRO EVENTO */}
 
+      <section className="card">
         <h2 className="text-xl font-black">
           Registrar evento
         </h2>
+
+        <p className="mt-1 text-sm text-slate-400">
+          Registrá las acciones relevantes del arquero durante el partido.
+        </p>
 
         <form
           onSubmit={
             handleSaveEvent
           }
-          className="mt-6 space-y-5"
+          className="mt-6 space-y-6"
         >
-
           <div className="grid gap-4 md:grid-cols-2">
 
-            <div>
+            {/* TIPO */}
 
+            <div>
               <label className="label">
-                Tipo
+                Tipo de evento
               </label>
 
               <select
@@ -1610,7 +1837,6 @@ export default function VideoDetailPage() {
                   )
                 }
               >
-
                 {eventTypes.map(
                   (
                     item
@@ -1627,15 +1853,14 @@ export default function VideoDetailPage() {
                     </option>
                   )
                 )}
-
               </select>
-
             </div>
 
-            <div>
+            {/* MÉTRICA */}
 
+            <div>
               <label className="label">
-                Métrica
+                Métrica asociada
               </label>
 
               <select
@@ -1652,7 +1877,6 @@ export default function VideoDetailPage() {
                   )
                 }
               >
-
                 <option value="">
                   Sin métrica
                 </option>
@@ -1673,25 +1897,23 @@ export default function VideoDetailPage() {
                     </option>
                   )
                 )}
-
               </select>
-
             </div>
-
           </div>
 
-          <div>
+          {/* TIMESTAMP */}
 
+          <div>
             <label className="label">
               Timestamp
             </label>
 
-            <div className="flex items-center gap-4">
-
+            <div className="grid gap-4 md:grid-cols-[1fr_120px] md:items-center">
               <input
                 className="input"
                 type="number"
                 min="0"
+                max="10800"
                 value={
                   timestamp
                 }
@@ -1707,28 +1929,27 @@ export default function VideoDetailPage() {
                 }
               />
 
-              <div className="min-w-24 text-xl font-black">
+              <div className="rounded-lg bg-slate-950/40 p-3 text-center text-xl font-black">
                 {formatSeconds(
                   timestamp
                 )}
               </div>
-
             </div>
-
           </div>
 
-          <div>
+          {/* SCORE */}
 
+          <div>
             <label className="label">
-              Score
+              Score del evento
             </label>
 
-            <div className="flex items-center gap-4">
-
+            <div className="flex items-center gap-5">
               <input
                 type="range"
                 min="1"
                 max="10"
+                step="1"
                 value={
                   eventScore
                 }
@@ -1745,93 +1966,120 @@ export default function VideoDetailPage() {
                 className="flex-1"
               />
 
-              <div className="text-2xl font-black">
+              <div className="min-w-14 rounded-lg bg-slate-800 px-3 py-2 text-center text-xl font-black">
                 {eventScore}
               </div>
-
             </div>
-
           </div>
 
-          <div className="flex gap-5">
+          {/* IMPACTO */}
 
-            <label>
-              <input
-                type="radio"
-                checked={
-                  positiveEvent
-                }
-                onChange={() =>
-                  setPositiveEvent(
-                    true
-                  )
-                }
-              />{" "}
-              Positivo
+          <div>
+            <label className="label">
+              Impacto
             </label>
 
-            <label>
-              <input
-                type="radio"
-                checked={
-                  !positiveEvent
-                }
-                onChange={() =>
-                  setPositiveEvent(
-                    false
-                  )
-                }
-              />{" "}
-              Negativo
-            </label>
+            <div className="flex flex-wrap gap-6">
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="impact"
+                  checked={
+                    positiveEvent
+                  }
+                  onChange={() =>
+                    setPositiveEvent(
+                      true
+                    )
+                  }
+                />
 
+                Positivo
+              </label>
+
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="impact"
+                  checked={
+                    !positiveEvent
+                  }
+                  onChange={() =>
+                    setPositiveEvent(
+                      false
+                    )
+                  }
+                />
+
+                Negativo
+              </label>
+            </div>
           </div>
 
-          <input
-            className="input"
-            name="result"
-            placeholder="Resultado de la acción"
-          />
+          {/* RESULTADO */}
 
-          <textarea
-            className="input min-h-24"
-            name="comment"
-            placeholder="Comentario técnico..."
-          />
+          <div>
+            <label className="label">
+              Resultado
+            </label>
 
-          <button
-            className="btn"
-            disabled={
-              savingEvent
-            }
-          >
-            {savingEvent
-              ? "Guardando..."
-              : `Registrar evento · ${formatSeconds(
-                  timestamp
-                )}`}
-          </button>
+            <input
+              className="input"
+              name="result"
+              placeholder="Ej. Control seguro, despeje, pérdida, gol evitado..."
+            />
+          </div>
 
+          {/* COMENTARIO */}
+
+          <div>
+            <label className="label">
+              Comentario técnico
+            </label>
+
+            <textarea
+              className="input min-h-28"
+              name="comment"
+              placeholder="Decisión, ejecución, contexto y lectura técnica de la acción..."
+            />
+          </div>
+
+          {message && (
+            <div className="rounded-xl border border-red-800 bg-red-950/30 p-4 text-sm">
+              {message}
+            </div>
+          )}
+
+          <div className="flex justify-end">
+            <button
+              type="submit"
+              className="btn"
+              disabled={
+                savingEvent
+              }
+            >
+              {savingEvent
+                ? "Guardando..."
+                : `+ Registrar evento · ${formatSeconds(
+                    timestamp
+                  )}`}
+            </button>
+          </div>
         </form>
-
       </section>
 
       {/* PREEVALUACIÓN */}
 
       <section className="card">
-
         <div className="flex flex-wrap items-start justify-between gap-5">
-
           <div>
-
             <h2 className="text-xl font-black">
               Preevaluación técnica derivada del video
             </h2>
 
             <p className="mt-1 text-sm text-slate-400">
-              Solo se calculan variables con evidencia registrada y validada.
+              Solo se calculan variables que cuentan con eventos validados.
             </p>
-
           </div>
 
           <button
@@ -1847,38 +2095,37 @@ export default function VideoDetailPage() {
           >
             Generar informe desde video
           </button>
-
         </div>
 
         <div className="mt-6 grid gap-4 md:grid-cols-2">
-
           {preEvaluation.map(
             (
               item
             ) => (
-
               <div
                 key={
                   item.metric_id
                 }
-                className="rounded-xl border border-slate-800 p-4"
+                className="rounded-xl border border-slate-800 bg-slate-950/20 p-4"
               >
-
                 <div className="flex items-start justify-between gap-4">
-
                   <div>
-
                     <div className="font-bold">
                       {item.label}
                     </div>
 
                     <div className="mt-1 text-xs text-slate-500">
-                      {item.events_count} eventos · Evidencia{" "}
+                      {item.events_count} evento
+                      {item.events_count ===
+                      1
+                        ? ""
+                        : "s"}
+                      {" · "}
+                      Evidencia{" "}
                       {evidenceLabel(
                         item.evidence
                       )}
                     </div>
-
                   </div>
 
                   <div className="text-2xl font-black">
@@ -1889,14 +2136,11 @@ export default function VideoDetailPage() {
                         )
                       : "—"}
                   </div>
-
                 </div>
 
                 {item.events_count >
                   0 && (
-
-                  <div className="mt-3 text-xs text-slate-500">
-
+                  <div className="mt-4 text-xs text-slate-500">
                     Positivos:{" "}
                     {
                       item.positive_count
@@ -1908,32 +2152,57 @@ export default function VideoDetailPage() {
                     {
                       item.negative_count
                     }
-
                   </div>
-
                 )}
-
               </div>
-
             )
           )}
-
         </div>
-
       </section>
 
+      {/* RESUMEN EVENTOS */}
+
+      <section className="grid gap-4 md:grid-cols-3">
+        <InfoCard
+          label="Eventos positivos"
+          value={String(
+            positiveCount
+          )}
+        />
+
+        <InfoCard
+          label="Eventos negativos"
+          value={String(
+            negativeCount
+          )}
+        />
+
+        <InfoCard
+          label="Eventos validados"
+          value={String(
+            validatedCount
+          )}
+        />
+      </section>
+
+      {/* HISTORIAL EVENTOS */}
+
       <section className="card">
+        <div className="flex flex-wrap items-start justify-between gap-5">
+          <div>
+            <h2 className="text-xl font-black">
+              Eventos registrados
+            </h2>
 
-        <div className="flex justify-between gap-4">
+            <p className="mt-1 text-sm text-slate-400">
+              Evidencia cronológica del análisis audiovisual.
+            </p>
+          </div>
 
-          <h2 className="text-xl font-black">
-            Eventos
-          </h2>
-
-          <div className="flex gap-2">
-
+          <div className="flex flex-wrap gap-2">
             <button
-              className="rounded-lg border border-slate-600 px-4 py-2"
+              type="button"
+              className="rounded-lg border border-slate-600 px-4 py-2 text-sm"
               onClick={
                 markReview
               }
@@ -1943,10 +2212,11 @@ export default function VideoDetailPage() {
                   0
               }
             >
-              Revisión
+              Pasar a revisión
             </button>
 
             <button
+              type="button"
               className="btn"
               onClick={
                 completeAnalysis
@@ -1957,98 +2227,134 @@ export default function VideoDetailPage() {
                   0
               }
             >
-              Completar
+              Completar análisis
             </button>
-
           </div>
-
         </div>
 
-        <div className="mt-6 space-y-3">
-
-          {events.length ===
-          0 ? (
-
-            <p className="text-sm text-slate-500">
-              Sin eventos registrados.
-            </p>
-
-          ) : (
-
-            events.map(
+        {events.length ===
+        0 ? (
+          <div className="mt-6 rounded-xl border border-slate-800 p-5 text-sm text-slate-500">
+            Todavía no hay eventos registrados.
+          </div>
+        ) : (
+          <div className="mt-6 space-y-3">
+            {events.map(
               (
                 item
               ) => (
-
                 <div
                   key={
                     item.id
                   }
                   className="rounded-xl border border-slate-800 p-4"
                 >
-
-                  <div className="flex justify-between gap-4">
-
-                    <div>
-
-                      <div className="font-bold">
+                  <div className="flex flex-wrap items-start justify-between gap-5">
+                    <div className="flex gap-4">
+                      <div className="min-w-16 text-xl font-black">
                         {formatSeconds(
                           item.timestamp_start_seconds
-                        )}{" "}
-                        ·{" "}
-                        {item.event_subtype ||
-                          item.event_type}
+                        )}
                       </div>
 
-                      <div className="mt-1 text-sm text-slate-400">
-                        {item.evaluation_metrics
-                          ?.label ||
-                          "Sin métrica"}
+                      <div>
+                        <div className="font-bold">
+                          {item.event_subtype ||
+                            item.event_type ||
+                            "Evento"}
+                        </div>
+
+                        <div className="mt-1 text-xs text-slate-500">
+                          {item.event_category ||
+                            "Sin categoría"}
+
+                          {item.evaluation_metrics
+                            ?.label &&
+                            ` · ${item.evaluation_metrics.label}`}
+                        </div>
+
+                        {item.result && (
+                          <div className="mt-2 text-sm text-slate-300">
+                            {item.result}
+                          </div>
+                        )}
+
+                        {item.comment && (
+                          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+                            {item.comment}
+                          </p>
+                        )}
                       </div>
-
-                      {item.comment && (
-
-                        <p className="mt-2 text-sm text-slate-300">
-                          {item.comment}
-                        </p>
-
-                      )}
-
                     </div>
 
-                    <div className="text-right">
+                    <div className="flex items-start gap-5">
+                      <div className="text-right">
+                        <div className="text-xs text-slate-500">
+                          Score
+                        </div>
 
-                      <div className="text-xl font-black">
-                        {item.event_score}
+                        <div className="text-2xl font-black">
+                          {item.event_score ??
+                            "—"}
+                        </div>
+
+                        <div className="mt-1 text-xs text-slate-500">
+                          {item.positive_event ===
+                          true
+                            ? "Positivo"
+                            : item.positive_event ===
+                              false
+                            ? "Negativo"
+                            : "Sin clasificación"}
+                        </div>
                       </div>
 
                       <button
+                        type="button"
                         onClick={() =>
                           deleteEvent(
                             item.id
                           )
                         }
-                        className="mt-2 text-xs text-slate-500"
+                        className="rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-400 hover:text-white"
                       >
                         Eliminar
                       </button>
-
                     </div>
-
                   </div>
-
                 </div>
-
               )
-            ))}
-
-        </div>
-
+            )}
+          </div>
+        )}
       </section>
 
+      {/* NAVEGACIÓN */}
+
+      <div className="flex flex-wrap justify-between gap-3 pb-10">
+        <a
+          href="/videos"
+          className="rounded-lg border border-slate-600 px-5 py-3"
+        >
+          ← Biblioteca de videos
+        </a>
+
+        {video.player_id && (
+          <a
+            href={`/players/${video.player_id}`}
+            className="btn"
+          >
+            Ver ficha del arquero
+          </a>
+        )}
+      </div>
     </div>
   );
 }
+
+/* =========================================================
+   COMPONENTES
+========================================================= */
 
 function InfoCard({
   label,
@@ -2059,7 +2365,6 @@ function InfoCard({
 }) {
   return (
     <div className="card">
-
       <div className="text-xs text-slate-400">
         {label}
       </div>
@@ -2067,7 +2372,6 @@ function InfoCard({
       <div className="mt-2 text-xl font-black">
         {value}
       </div>
-
     </div>
   );
 }
