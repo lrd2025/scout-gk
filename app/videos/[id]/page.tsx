@@ -25,6 +25,9 @@ type VideoRow = {
   provider: string | null;
   external_video_id: string | null;
 
+  analysis_source_url: string | null;
+  analysis_source_type: string | null;
+
   match_date: string | null;
   competition_name: string | null;
 
@@ -434,6 +437,17 @@ export default function VideoDetailPage() {
       starting_goal_side: "AUTO",
     });
 
+
+  const [
+    analysisSourceUrl,
+    setAnalysisSourceUrl,
+  ] = useState("");
+
+  const [
+    savingAnalysisConfig,
+    setSavingAnalysisConfig,
+  ] = useState(false);
+
   const playerContainerRef =
     useRef<HTMLDivElement | null>(
       null
@@ -626,6 +640,8 @@ export default function VideoDetailPage() {
             url,
             provider,
             external_video_id,
+            analysis_source_url,
+            analysis_source_type,
             match_date,
             competition_name,
             home_team,
@@ -819,8 +835,15 @@ export default function VideoDetailPage() {
         []
       ) as EventType[];
 
+    const loadedVideo =
+      videoResponse.data as unknown as VideoRow;
+
     setVideo(
-      videoResponse.data as unknown as VideoRow
+      loadedVideo
+    );
+
+    setAnalysisSourceUrl(
+      loadedVideo.analysis_source_url || ""
     );
 
     setMetrics(
@@ -1038,6 +1061,195 @@ export default function VideoDetailPage() {
      ANÁLISIS AUTOMÁTICO
   ======================================================= */
 
+  async function saveAutomaticAnalysisConfig() {
+    if (!video || !video.player_id) {
+      setAutomaticAnalysisMessage(
+        "El video debe tener un arquero asociado."
+      );
+      return null;
+    }
+
+    setSavingAnalysisConfig(true);
+    setAutomaticAnalysisMessage("");
+
+    try {
+      const currentVideo = video;
+      const playerId = currentVideo.player_id;
+
+      let goalkeeperSide:
+        | "HOME"
+        | "AWAY"
+        | "UNKNOWN" = "UNKNOWN";
+
+      const goalkeeperTeam =
+        currentVideo.goalkeeper_team?.trim().toLowerCase();
+
+      const homeTeam =
+        currentVideo.home_team?.trim().toLowerCase();
+
+      const awayTeam =
+        currentVideo.away_team?.trim().toLowerCase();
+
+      if (
+        goalkeeperTeam &&
+        homeTeam &&
+        goalkeeperTeam === homeTeam
+      ) {
+        goalkeeperSide = "HOME";
+      }
+
+      if (
+        goalkeeperTeam &&
+        awayTeam &&
+        goalkeeperTeam === awayTeam
+      ) {
+        goalkeeperSide = "AWAY";
+      }
+
+      const cleanAnalysisSourceUrl =
+        analysisSourceUrl.trim();
+
+      if (!cleanAnalysisSourceUrl) {
+        throw {
+          code: "ANALYSIS_SOURCE_REQUIRED",
+          message:
+            "Ingresá una URL directa al archivo MP4 que utilizará el worker para el análisis.",
+          details:
+            "El enlace de YouTube puede seguir utilizándose para visualización, pero no como fuente automática del worker.",
+        };
+      }
+
+      const { data: targetData, error: targetError } =
+        await supabase
+          .from("video_goalkeeper_targets")
+          .upsert(
+            {
+              video_id: currentVideo.id,
+              player_id: playerId,
+              team_name:
+                currentVideo.goalkeeper_team || null,
+              shirt_number:
+                goalkeeperTargetConfig.shirt_number
+                  ? Number(
+                      goalkeeperTargetConfig.shirt_number
+                    )
+                  : null,
+              shirt_color:
+                goalkeeperTargetConfig.shirt_color.trim() ||
+                null,
+              goalkeeper_side: goalkeeperSide,
+              initial_timestamp_seconds:
+                goalkeeperTargetConfig.active_from_seconds ||
+                0,
+              active_from_seconds:
+                goalkeeperTargetConfig.active_from_seconds ||
+                0,
+              active_to_seconds:
+                goalkeeperTargetConfig.active_to_seconds,
+              starting_goal_side:
+                goalkeeperTargetConfig.starting_goal_side,
+              identification_notes:
+                "Configurado desde Scout GK",
+              identification_status: "CONFIGURED",
+              updated_at: new Date().toISOString(),
+            },
+            {
+              onConflict: "video_id,player_id",
+            }
+          )
+          .select("*")
+          .single();
+
+      if (targetError) {
+        throw targetError;
+      }
+
+      const { error: videoUpdateError } =
+        await supabase
+          .from("videos")
+          .update({
+            analysis_source_url:
+              cleanAnalysisSourceUrl,
+            analysis_source_type:
+              "DIRECT_MP4",
+            updated_at:
+              new Date().toISOString(),
+          })
+          .eq("id", currentVideo.id);
+
+      if (videoUpdateError) {
+        throw videoUpdateError;
+      }
+
+      setVideo({
+        ...currentVideo,
+        analysis_source_url:
+          cleanAnalysisSourceUrl,
+        analysis_source_type:
+          "DIRECT_MP4",
+      });
+
+      setAutomaticAnalysisMessage(
+        `Configuración guardada. Dorsal: ${
+          targetData?.shirt_number ?? "sin definir"
+        } · Color: ${
+          targetData?.shirt_color ?? "sin definir"
+        }.`
+      );
+
+      return targetData;
+    } catch (error: unknown) {
+      console.error(
+        "SCOUT GK - Save automatic config error:",
+        error
+      );
+
+      let errorMessage =
+        "No se pudo guardar la configuración.";
+
+      if (
+        typeof error === "object" &&
+        error !== null
+      ) {
+        const dbError = error as {
+          code?: string;
+          message?: string;
+          details?: string;
+          hint?: string;
+        };
+
+        const parts: string[] = [];
+
+        if (dbError.code) {
+          parts.push(`Código: ${dbError.code}`);
+        }
+
+        if (dbError.message) {
+          parts.push(`Mensaje: ${dbError.message}`);
+        }
+
+        if (dbError.details) {
+          parts.push(`Detalle: ${dbError.details}`);
+        }
+
+        if (dbError.hint) {
+          parts.push(`Sugerencia: ${dbError.hint}`);
+        }
+
+        if (parts.length > 0) {
+          errorMessage = parts.join(" | ");
+        }
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+
+      setAutomaticAnalysisMessage(errorMessage);
+      return null;
+    } finally {
+      setSavingAnalysisConfig(false);
+    }
+  }
+
   async function startAutomaticAnalysis() {
     if (
       !video
@@ -1074,114 +1286,11 @@ export default function VideoDetailPage() {
     );
 
     try {
-      let goalkeeperSide:
-        | "HOME"
-        | "AWAY"
-        | "UNKNOWN" =
-        "UNKNOWN";
+      const savedTarget =
+        await saveAutomaticAnalysisConfig();
 
-      const goalkeeperTeam =
-        currentVideo.goalkeeper_team
-          ?.trim()
-          .toLowerCase();
-
-      const homeTeam =
-        currentVideo.home_team
-          ?.trim()
-          .toLowerCase();
-
-      const awayTeam =
-        currentVideo.away_team
-          ?.trim()
-          .toLowerCase();
-
-      if (
-        goalkeeperTeam &&
-        homeTeam &&
-        goalkeeperTeam ===
-          homeTeam
-      ) {
-        goalkeeperSide =
-          "HOME";
-      }
-
-      if (
-        goalkeeperTeam &&
-        awayTeam &&
-        goalkeeperTeam ===
-          awayTeam
-      ) {
-        goalkeeperSide =
-          "AWAY";
-      }
-
-      /* -----------------------------------------------
-         1. CONFIGURAR ARQUERO OBJETIVO
-      ----------------------------------------------- */
-
-      const {
-        error:
-          targetError,
-      } =
-        await supabase
-          .from(
-            "video_goalkeeper_targets"
-          )
-          .upsert(
-            {
-              video_id:
-                currentVideo.id,
-
-              player_id:
-                playerId,
-
-              team_name:
-                currentVideo.goalkeeper_team ||
-                null,
-
-              shirt_number:
-                goalkeeperTargetConfig.shirt_number
-                  ? Number(goalkeeperTargetConfig.shirt_number)
-                  : null,
-
-              shirt_color:
-                goalkeeperTargetConfig.shirt_color.trim() || null,
-
-              goalkeeper_side:
-                goalkeeperSide,
-
-              initial_timestamp_seconds:
-                goalkeeperTargetConfig.active_from_seconds || 0,
-
-              active_from_seconds:
-                goalkeeperTargetConfig.active_from_seconds || 0,
-
-              active_to_seconds:
-                goalkeeperTargetConfig.active_to_seconds,
-
-              starting_goal_side:
-                goalkeeperTargetConfig.starting_goal_side,
-
-              identification_notes:
-                "Configurado desde Scout GK",
-
-              identification_status:
-                "CONFIGURED",
-
-              updated_at:
-                new Date()
-                  .toISOString(),
-            },
-            {
-              onConflict:
-                "video_id,player_id",
-            }
-          );
-
-      if (
-        targetError
-      ) {
-        throw targetError;
+      if (!savedTarget) {
+        return;
       }
 
       /* -----------------------------------------------
@@ -2704,6 +2813,40 @@ export default function VideoDetailPage() {
         <div className="mt-6 rounded-xl border border-slate-800 p-4">
 
           <div className="font-bold">
+            Fuente para análisis automático
+          </div>
+
+          <p className="mt-1 text-sm text-slate-400">
+            YouTube continúa siendo la fuente de visualización. Para el motor de visión necesitás una URL directa y accesible al archivo MP4.
+          </p>
+
+          <div className="mt-4">
+            <label className="label">
+              URL directa del MP4
+            </label>
+
+            <input
+              className="input"
+              type="url"
+              placeholder="https://.../partido.mp4"
+              value={analysisSourceUrl}
+              onChange={(event) =>
+                setAnalysisSourceUrl(
+                  event.target.value
+                )
+              }
+            />
+
+            <div className="mt-2 text-xs text-slate-500">
+              Debe abrir o descargar directamente el archivo de video, sin requerir inicio de sesión.
+            </div>
+          </div>
+
+        </div>
+
+        <div className="mt-6 rounded-xl border border-slate-800 p-4">
+
+          <div className="font-bold">
             Configuración del arquero objetivo
           </div>
 
@@ -2926,6 +3069,22 @@ export default function VideoDetailPage() {
         )}
 
         <div className="mt-6 flex flex-wrap justify-end gap-3">
+
+          <button
+            type="button"
+            className="rounded-lg border border-slate-600 px-4 py-3 text-sm"
+            onClick={
+              saveAutomaticAnalysisConfig
+            }
+            disabled={
+              savingAnalysisConfig ||
+              !video.player_id
+            }
+          >
+            {savingAnalysisConfig
+              ? "Guardando..."
+              : "Guardar configuración"}
+          </button>
 
           <button
             type="button"
