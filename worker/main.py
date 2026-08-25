@@ -94,6 +94,8 @@ def get_video(video_id: str):
             url,
             provider,
             external_video_id,
+            analysis_source_url,
+            analysis_source_type,
             player_id,
             goalkeeper_team,
             match_date,
@@ -155,81 +157,84 @@ def update_target(target_id: str, **values):
 # VIDEO
 # =========================================================
 
-def ensure_yt_dlp():
-    if shutil.which("yt-dlp"):
-        return
-
-    raise RuntimeError(
-        "yt-dlp no está disponible en el runner. "
-        "Verificá worker/requirements.txt."
-    )
-
-
-def download_video(
+def download_direct_video(
     url: str,
     output_dir: Path,
 ) -> Path:
     """
-    Descarga una copia temporal del video para análisis.
-    Intenta obtener MP4 compatible con OpenCV.
+    Descarga por HTTP/HTTPS una fuente directa de video.
+    No usa YouTube ni cookies.
     """
 
-    ensure_yt_dlp()
+    import requests
 
-    output_template = str(
-        output_dir / "source.%(ext)s"
-    )
+    if not (
+        url.startswith("http://")
+        or url.startswith("https://")
+    ):
+        raise RuntimeError(
+            "analysis_source_url debe ser una URL HTTP/HTTPS directa."
+        )
 
-    command = [
-        "yt-dlp",
-        "--no-playlist",
-        "--restrict-filenames",
-        "--merge-output-format",
-        "mp4",
-        "-f",
-        "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
-        "-o",
-        output_template,
+    destination = output_dir / "source.mp4"
+
+    print("Descargando MP4 directo...")
+    print(f"Fuente: {url}")
+
+    with requests.get(
         url,
-    ]
+        stream=True,
+        timeout=(20, 180),
+        allow_redirects=True,
+        headers={
+            "User-Agent": "Scout-GK-Worker/0.5"
+        },
+    ) as response:
+        response.raise_for_status()
 
-    print("Descargando fuente audiovisual...")
-    print(" ".join(command[:-1]) + " [URL]")
+        content_type = (
+            response.headers
+            .get("content-type", "")
+            .lower()
+        )
 
-    result = subprocess.run(
-        command,
-        check=False,
-        capture_output=True,
-        text=True,
+        print(
+            f"Content-Type: {content_type or 'no informado'}"
+        )
+
+        with destination.open("wb") as file:
+            total = 0
+
+            for chunk in response.iter_content(
+                chunk_size=1024 * 1024
+            ):
+                if not chunk:
+                    continue
+
+                file.write(chunk)
+                total += len(chunk)
+
+                if total % (25 * 1024 * 1024) < len(chunk):
+                    print(
+                        f"Descargados: {round(total / 1024 / 1024, 1)} MB"
+                    )
+
+    if not destination.exists():
+        raise RuntimeError(
+            "No se generó el archivo temporal del video."
+        )
+
+    if destination.stat().st_size < 1024 * 100:
+        raise RuntimeError(
+            "La fuente descargada es demasiado pequeña para ser un partido."
+        )
+
+    print(
+        f"Descarga completada: "
+        f"{round(destination.stat().st_size / 1024 / 1024, 1)} MB"
     )
 
-    if result.stdout:
-        print(result.stdout)
-
-    if result.returncode != 0:
-        if result.stderr:
-            print(result.stderr)
-
-        raise RuntimeError(
-            "No se pudo obtener el video con yt-dlp. "
-            "La fuente puede bloquear descargas desde GitHub Actions "
-            "o requerir otro método de acceso."
-        )
-
-    files = list(output_dir.glob("source.*"))
-
-    if not files:
-        raise RuntimeError(
-            "yt-dlp finalizó pero no se encontró el archivo descargado."
-        )
-
-    # Preferimos MP4 si existe.
-    mp4 = output_dir / "source.mp4"
-
-    if mp4.exists():
-        return mp4
-
-    return files[0]
+    return destination
 
 
 def inspect_video(video_path: Path) -> dict:
@@ -376,7 +381,7 @@ def process_job(job: dict):
         )
 
     print("=" * 64)
-    print("SCOUT GK VISION - FASE 1")
+    print("SCOUT GK VISION - FASE 1 / FUENTE DIRECTA")
     print(f"Job:     {job_id}")
     print(f"Video:   {video_id}")
     print(f"Jugador: {player_id}")
@@ -387,7 +392,7 @@ def process_job(job: dict):
         status="PROCESSING",
         progress=5,
         analysis_engine="SCOUT_GK_VISION",
-        model_version="0.3.0",
+        model_version="0.5.0",
         started_at=now_iso(),
         error_message=None,
     )
@@ -440,11 +445,27 @@ def process_job(job: dict):
         processing_progress=10,
     )
 
-    source_url = video.get("url")
+    source_url = video.get(
+        "analysis_source_url"
+    )
+
+    source_type = video.get(
+        "analysis_source_type"
+    )
 
     if not source_url:
         raise RuntimeError(
-            "El registro del video no tiene URL."
+            "El video no tiene analysis_source_url. "
+            "Configurá una URL directa al MP4 desde Scout GK."
+        )
+
+    if source_type not in (
+        "DIRECT_MP4",
+        "STORAGE",
+        "EXTERNAL",
+    ):
+        raise RuntimeError(
+            f"Tipo de fuente no compatible: {source_type}"
         )
 
     with tempfile.TemporaryDirectory(
@@ -452,7 +473,7 @@ def process_job(job: dict):
     ) as tmp:
         workdir = Path(tmp)
 
-        video_path = download_video(
+        video_path = download_direct_video(
             source_url,
             workdir,
         )
@@ -538,7 +559,7 @@ def process_job(job: dict):
         job_id,
         status="REVIEW",
         progress=50,
-        model_version="0.3.0",
+        model_version="0.5.0",
         candidate_events=0,
     )
 
