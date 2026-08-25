@@ -5,7 +5,8 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Scout GK",
-  description: "Inteligencia de scouting y valoración longitudinal de jugadores",
+  description:
+    "Inteligencia de scouting y valoración longitudinal de arqueros",
 };
 
 export default function RootLayout({
@@ -72,7 +73,9 @@ export default function RootLayout({
                 fontSize: "14px",
               }}
             >
-              <Link href="/">Dashboard</Link>
+              <Link href="/">
+                Dashboard
+              </Link>
 
               <Link href="/players">
                 Jugadores
@@ -80,6 +83,10 @@ export default function RootLayout({
 
               <Link href="/compare">
                 Comparar
+              </Link>
+
+              <Link href="/videos">
+                Videos
               </Link>
 
               <Link href="/reports/new">
