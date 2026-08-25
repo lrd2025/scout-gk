@@ -1,70 +1,105 @@
+import type { Metadata } from "next";
+import type { ReactNode } from "react";
+import Link from "next/link";
 import "./globals.css";
 
-export const metadata = {
+export const metadata: Metadata = {
   title: "Scout GK",
-  description: "Scouting de jugadores con foco en arqueros",
+  description: "Inteligencia de scouting y valoración longitudinal de jugadores",
 };
 
 export default function RootLayout({
   children,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <html lang="es">
       <body>
-        <header className="border-b border-slate-800 bg-slate-950">
-          <div className="mx-auto flex max-w-7xl items-center justify-between gap-6 px-6 py-4">
-            <a href="/" className="min-w-fit">
-              <div className="text-xl font-black">
+        <header
+          style={{
+            background: "#020617",
+            borderBottom: "1px solid #1e293b",
+          }}
+        >
+          <div
+            style={{
+              maxWidth: "1180px",
+              margin: "0 auto",
+              padding: "16px 24px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "24px",
+            }}
+          >
+            <Link
+              href="/"
+              style={{
+                textDecoration: "none",
+                color: "inherit",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "22px",
+                  fontWeight: 900,
+                  lineHeight: 1,
+                  color: "#ffffff",
+                }}
+              >
                 SCOUT GK
               </div>
 
-              <div className="text-xs text-slate-400">
+              <div
+                style={{
+                  marginTop: "5px",
+                  fontSize: "12px",
+                  color: "#93c5fd",
+                }}
+              >
                 Inteligencia de scouting
               </div>
-            </a>
+            </Link>
 
-            <nav className="flex flex-wrap items-center justify-end gap-x-5 gap-y-2 text-sm text-slate-300">
-              <a
-                href="/"
-                className="transition hover:text-white"
-              >
-                Dashboard
-              </a>
+            <nav
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "flex-end",
+                flexWrap: "wrap",
+                gap: "20px",
+                fontSize: "14px",
+              }}
+            >
+              <Link href="/">Dashboard</Link>
 
-              <a
-                href="/players"
-                className="transition hover:text-white"
-              >
+              <Link href="/players">
                 Jugadores
-              </a>
+              </Link>
 
-              <a
-                href="/compare"
-                className="transition hover:text-white"
-              >
+              <Link href="/compare">
                 Comparar
-              </a>
+              </Link>
 
-              <a
-                href="/reports/new"
-                className="transition hover:text-white"
-              >
+              <Link href="/reports/new">
                 Nuevo informe
-              </a>
+              </Link>
 
-              <a
-                href="/login"
-                className="transition hover:text-white"
-              >
+              <Link href="/login">
                 Acceso
-              </a>
+              </Link>
             </nav>
           </div>
         </header>
 
-        <main className="mx-auto max-w-7xl px-6 py-8">
+        <main
+          style={{
+            maxWidth: "1180px",
+            margin: "0 auto",
+            padding: "32px 24px",
+          }}
+        >
           {children}
         </main>
       </body>
