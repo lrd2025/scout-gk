@@ -1331,18 +1331,65 @@ export default function VideoDetailPage() {
           8
         )}… pendiente de procesamiento.`
       );
-    } catch (
-      error: unknown
-    ) {
+    } catch (error: unknown) {
       console.error(
-        "Automatic analysis:",
+        "SCOUT GK - Automatic analysis error:",
         error
       );
 
-      setAutomaticAnalysisMessage(
+      let errorMessage =
+        "No se pudo iniciar el análisis automático.";
+
+      if (
+        typeof error === "object" &&
+        error !== null
+      ) {
+        const supabaseError = error as {
+          message?: string;
+          code?: string;
+          details?: string;
+          hint?: string;
+        };
+
+        const parts: string[] = [];
+
+        if (supabaseError.code) {
+          parts.push(
+            `Código: ${supabaseError.code}`
+          );
+        }
+
+        if (supabaseError.message) {
+          parts.push(
+            `Mensaje: ${supabaseError.message}`
+          );
+        }
+
+        if (supabaseError.details) {
+          parts.push(
+            `Detalle: ${supabaseError.details}`
+          );
+        }
+
+        if (supabaseError.hint) {
+          parts.push(
+            `Sugerencia: ${supabaseError.hint}`
+          );
+        }
+
+        if (parts.length > 0) {
+          errorMessage =
+            parts.join(" | ");
+        }
+      } else if (
         error instanceof Error
-          ? error.message
-          : "No se pudo iniciar el análisis automático."
+      ) {
+        errorMessage =
+          error.message;
+      }
+
+      setAutomaticAnalysisMessage(
+        errorMessage
       );
     } finally {
       setStartingAutomaticAnalysis(
