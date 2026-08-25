@@ -1238,7 +1238,7 @@ export default function VideoDetailPage() {
               "GOALKEEPER_AUTO",
 
             source_type:
-              "VIDEO",
+              "AI",
 
             analysis_engine:
               "SCOUT_GK_VISION",
