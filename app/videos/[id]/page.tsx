@@ -4,41 +4,29 @@ import {
   FormEvent,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
-
 import { useParams } from "next/navigation";
 import { supabase } from "../../../lib/supabase";
 
-/* =========================================================
-   TIPOS
-========================================================= */
-
 type VideoRow = {
   id: string;
-
   title: string | null;
   description: string | null;
   url: string;
-
   provider: string | null;
   external_video_id: string | null;
-
   match_date: string | null;
   competition_name: string | null;
-
   home_team: string | null;
   away_team: string | null;
-
   home_score: number | null;
   away_score: number | null;
-
   goalkeeper_team: string | null;
-
   analysis_status: string | null;
   processing_progress: number | null;
   human_validated: boolean | null;
-
   player_id: string | null;
 
   players: {
@@ -69,28 +57,19 @@ type Metric = {
 
 type VideoEvent = {
   id: string;
-
   timestamp_start_seconds: number;
   timestamp_end_seconds: number | null;
-
   minute_label: string | null;
-
   event_type: string | null;
   event_category: string | null;
   event_subtype: string | null;
-
   event_score: number | null;
-
   positive_event: boolean | null;
-
   result: string | null;
   comment: string | null;
-
   source_type: string | null;
-
   confidence: number | null;
   validated: boolean | null;
-
   metric_id: string | null;
 
   evaluation_metrics: {
@@ -107,38 +86,72 @@ type MetricEvidence =
 
 type MetricPreEvaluation = {
   metric_id: string;
-
   code: string;
   label: string;
   group_name: string;
-
   score: number | null;
-
   events_count: number;
   positive_count: number;
   negative_count: number;
-
   evidence: MetricEvidence;
 };
 
-/* =========================================================
-   FUNCIONES AUXILIARES
-========================================================= */
+type YTPlayer = {
+  getCurrentTime: () => number;
+  getDuration: () => number;
+  seekTo: (
+    seconds: number,
+    allowSeekAhead: boolean
+  ) => void;
+  destroy: () => void;
+};
 
-function formatSeconds(totalSeconds: number) {
-  const safeSeconds = Math.max(
-    0,
-    Math.floor(totalSeconds)
-  );
+type YTNamespace = {
+  Player: new (
+    element: HTMLElement,
+    options: {
+      videoId: string;
+      playerVars?: Record<
+        string,
+        number | string
+      >;
+      events?: {
+        onReady?: () => void;
+      };
+    }
+  ) => YTPlayer;
+};
 
-  const minutes = Math.floor(
-    safeSeconds / 60
-  );
+declare global {
+  interface Window {
+    YT?: YTNamespace;
+
+    onYouTubeIframeAPIReady?: () => void;
+  }
+}
+
+function formatSeconds(
+  totalSeconds: number
+) {
+  const safeSeconds =
+    Math.max(
+      0,
+      Math.floor(
+        totalSeconds
+      )
+    );
+
+  const minutes =
+    Math.floor(
+      safeSeconds / 60
+    );
 
   const seconds =
     safeSeconds % 60;
 
-  return `${minutes}:${String(seconds).padStart(
+  return `${minutes}:${String(
+    seconds
+  ).padStart(
     2,
     "0"
   )}`;
@@ -230,30 +243,16 @@ function evidenceLabel(
   }
 }
 
-function getYouTubeEmbedUrl(
-  video: VideoRow
-) {
-  if (
-    video.provider !== "YouTube" ||
-    !video.external_video_id
-  ) {
-    return null;
-  }
-
-  return `https://www.youtube.com/embed/${video.external_video_id}`;
-}
-
-/* =========================================================
-   COMPONENTE PRINCIPAL
-========================================================= */
-
 export default function VideoDetailPage() {
   const params =
     useParams<{
       id: string;
     }>();
 
-  const [video, setVideo] =
+  const [
+    video,
+    setVideo,
+  ] =
     useState<VideoRow | null>(
       null
     );
@@ -336,13 +335,146 @@ export default function VideoDetailPage() {
   ] =
     useState("");
 
-  /* =======================================================
-     CARGA INICIAL
-  ======================================================= */
+  const [
+    playerReady,
+    setPlayerReady,
+  ] =
+    useState(false);
+
+  const [
+    duration,
+    setDuration,
+  ] =
+    useState(0);
+
+  const playerContainerRef =
+    useRef<HTMLDivElement | null>(
+      null
+    );
+
+  const youtubePlayerRef =
+    useRef<YTPlayer | null>(
+      null
+    );
 
   useEffect(() => {
     loadData();
   }, [params.id]);
+
+  useEffect(() => {
+    if (
+      !video?.external_video_id ||
+      video.provider !==
+        "YouTube"
+    ) {
+      return;
+    }
+
+    let cancelled =
+      false;
+
+    function createPlayer() {
+      if (
+        cancelled ||
+        !window.YT ||
+        !playerContainerRef.current
+      ) {
+        return;
+      }
+
+      youtubePlayerRef.current
+        ?.destroy();
+
+      youtubePlayerRef.current =
+        new window.YT.Player(
+          playerContainerRef.current,
+          {
+            videoId:
+              video.external_video_id as string,
+
+            playerVars: {
+              controls: 1,
+              rel: 0,
+              modestbranding: 1,
+            },
+
+            events: {
+              onReady: () => {
+                if (
+                  cancelled
+                ) {
+                  return;
+                }
+
+                setPlayerReady(
+                  true
+                );
+
+                const total =
+                  youtubePlayerRef
+                    .current
+                    ?.getDuration() ||
+                  0;
+
+                setDuration(
+                  Math.floor(
+                    total
+                  )
+                );
+              },
+            },
+          }
+        );
+    }
+
+    if (
+      window.YT?.Player
+    ) {
+      createPlayer();
+    } else {
+      const existingScript =
+        document.querySelector(
+          'script[src="https://www.youtube.com/iframe_api"]'
+        );
+
+      window.onYouTubeIframeAPIReady =
+        createPlayer;
+
+      if (
+        !existingScript
+      ) {
+        const script =
+          document.createElement(
+            "script"
+          );
+
+        script.src =
+          "https://www.youtube.com/iframe_api";
+
+        document.body.appendChild(
+          script
+        );
+      }
+    }
+
+    return () => {
+      cancelled =
+        true;
+
+      youtubePlayerRef.current
+        ?.destroy();
+
+      youtubePlayerRef.current =
+        null;
+
+      setPlayerReady(
+        false
+      );
+    };
+  }, [
+    video?.external_video_id,
+    video?.provider,
+  ]);
 
   async function loadData() {
     setLoading(true);
@@ -353,7 +485,9 @@ export default function VideoDetailPage() {
     } =
       await supabase.auth.getSession();
 
-    if (!authData.session) {
+    if (
+      !authData.session
+    ) {
       setMessage(
         "Necesitás iniciar sesión."
       );
@@ -371,7 +505,9 @@ export default function VideoDetailPage() {
     ] =
       await Promise.all([
         supabase
-          .from("videos")
+          .from(
+            "videos"
+          )
           .select(`
             id,
             title,
@@ -496,7 +632,8 @@ export default function VideoDetailPage() {
       videoResponse.error
     ) {
       setMessage(
-        videoResponse.error.message
+        videoResponse.error
+          .message
       );
 
       setLoading(false);
@@ -508,7 +645,8 @@ export default function VideoDetailPage() {
       eventTypesResponse.error
     ) {
       setMessage(
-        eventTypesResponse.error.message
+        eventTypesResponse.error
+          .message
       );
     }
 
@@ -516,7 +654,8 @@ export default function VideoDetailPage() {
       metricsResponse.error
     ) {
       setMessage(
-        metricsResponse.error.message
+        metricsResponse.error
+          .message
       );
     }
 
@@ -524,7 +663,8 @@ export default function VideoDetailPage() {
       eventsResponse.error
     ) {
       setMessage(
-        eventsResponse.error.message
+        eventsResponse.error
+          .message
       );
     }
 
@@ -559,10 +699,6 @@ export default function VideoDetailPage() {
       ) as unknown as VideoEvent[]
     );
 
-    /*
-     * Inicializamos la primera acción
-     * y su métrica asociada.
-     */
     if (
       loadedEventTypes.length >
       0
@@ -597,10 +733,6 @@ export default function VideoDetailPage() {
     setLoading(false);
   }
 
-  /* =======================================================
-     CAMBIO DE TIPO DE EVENTO
-  ======================================================= */
-
   function handleEventTypeChange(
     code: string
   ) {
@@ -613,7 +745,9 @@ export default function VideoDetailPage() {
           code
       );
 
-    if (!eventType) {
+    if (
+      !eventType
+    ) {
       return;
     }
 
@@ -641,9 +775,70 @@ export default function VideoDetailPage() {
     );
   }
 
-  /* =======================================================
-     GUARDAR EVENTO
-  ======================================================= */
+  function captureCurrentTime() {
+    const current =
+      youtubePlayerRef.current
+        ?.getCurrentTime();
+
+    if (
+      typeof current ===
+        "number" &&
+      Number.isFinite(
+        current
+      )
+    ) {
+      setTimestamp(
+        Math.floor(
+          current
+        )
+      );
+    }
+  }
+
+  function seekRelative(
+    delta: number
+  ) {
+    const player =
+      youtubePlayerRef.current;
+
+    if (
+      !player
+    ) {
+      return;
+    }
+
+    const current =
+      player.getCurrentTime() ||
+      0;
+
+    const max =
+      player.getDuration() ||
+      duration ||
+      0;
+
+    const target =
+      Math.max(
+        0,
+        Math.min(
+          max ||
+            current +
+              delta,
+          current +
+            delta
+        )
+      );
+
+    player.seekTo(
+      target,
+      true
+    );
+
+    setTimestamp(
+      Math.floor(
+        target
+      )
+    );
+  }
 
   async function handleSaveEvent(
     event:
@@ -651,17 +846,15 @@ export default function VideoDetailPage() {
   ) {
     event.preventDefault();
 
-    if (!video) {
+    if (
+      !video
+    ) {
       setMessage(
         "No se encontró el video."
       );
+
       return;
     }
-
-    const form =
-      new FormData(
-        event.currentTarget
-      );
 
     const eventType =
       eventTypes.find(
@@ -672,7 +865,9 @@ export default function VideoDetailPage() {
           selectedEventType
       );
 
-    if (!eventType) {
+    if (
+      !eventType
+    ) {
       setMessage(
         "Seleccioná un tipo de evento."
       );
@@ -680,7 +875,30 @@ export default function VideoDetailPage() {
       return;
     }
 
-    setSavingEvent(true);
+    const form =
+      new FormData(
+        event.currentTarget
+      );
+
+    const automaticTime =
+      youtubePlayerRef.current
+        ?.getCurrentTime();
+
+    const finalTimestamp =
+      typeof automaticTime ===
+        "number" &&
+      Number.isFinite(
+        automaticTime
+      )
+        ? Math.floor(
+            automaticTime
+          )
+        : timestamp;
+
+    setSavingEvent(
+      true
+    );
+
     setMessage("");
 
     try {
@@ -696,16 +914,14 @@ export default function VideoDetailPage() {
           null,
 
         timestamp_start_seconds:
-          Number(
-            timestamp
-          ),
+          finalTimestamp,
 
         timestamp_end_seconds:
           null,
 
         minute_label:
           formatSeconds(
-            timestamp
+            finalTimestamp
           ),
 
         event_type:
@@ -794,17 +1010,16 @@ export default function VideoDetailPage() {
           `)
           .single();
 
-      if (error) {
+      if (
+        error
+      ) {
         throw error;
       }
-
-      const newEvent =
-        data as unknown as VideoEvent;
 
       const updatedEvents =
         [
           ...events,
-          newEvent,
+          data as unknown as VideoEvent,
         ].sort(
           (
             a,
@@ -818,26 +1033,17 @@ export default function VideoDetailPage() {
         updatedEvents
       );
 
-      await updateAnalysisState(
-        updatedEvents.length
+      setTimestamp(
+        finalTimestamp
       );
 
-      /*
-       * Avanza un segundo para facilitar
-       * el registro consecutivo.
-       */
-      setTimestamp(
-        (
-          current
-        ) =>
-          current + 1
+      await updateAnalysisState(
+        updatedEvents.length
       );
 
       setEventScore(5);
 
       event.currentTarget.reset();
-
-      setSavingEvent(false);
     } catch (
       error: unknown
     ) {
@@ -845,32 +1051,26 @@ export default function VideoDetailPage() {
         error
       );
 
-      const errorMessage =
+      setMessage(
         error instanceof Error
           ? error.message
-          : "No se pudo registrar el evento.";
-
-      setMessage(
-        errorMessage
+          : "No se pudo registrar el evento."
       );
-
-      setSavingEvent(false);
+    } finally {
+      setSavingEvent(
+        false
+      );
     }
   }
-
-  /* =======================================================
-     ESTADO DEL ANÁLISIS
-  ======================================================= */
 
   async function updateAnalysisState(
     eventsCount: number
   ) {
-    if (!video) {
+    if (
+      !video
+    ) {
       return;
     }
-
-    const currentVideo =
-      video;
 
     const nextStatus =
       eventsCount >
@@ -886,76 +1086,55 @@ export default function VideoDetailPage() {
             90,
             Math.max(
               10,
-              eventsCount * 5
+              eventsCount *
+                5
             )
           );
 
-    const {
-      error:
-        videoUpdateError,
-    } =
-      await supabase
-        .from("videos")
-        .update({
-          analysis_status:
-            nextStatus,
+    await supabase
+      .from(
+        "videos"
+      )
+      .update({
+        analysis_status:
+          nextStatus,
 
-          processing_progress:
-            progress,
-
-          updated_at:
-            new Date()
-              .toISOString(),
-        })
-        .eq(
-          "id",
-          currentVideo.id
-        );
-
-    if (
-      videoUpdateError
-    ) {
-      console.error(
-        videoUpdateError
-      );
-    }
-
-    const {
-      error:
-        jobUpdateError,
-    } =
-      await supabase
-        .from(
-          "video_analysis_jobs"
-        )
-        .update({
-          status:
-            eventsCount >
-            0
-              ? "PROCESSING"
-              : "PENDING",
-
+        processing_progress:
           progress,
 
-          events_detected:
-            eventsCount,
-
-          updated_at:
-            new Date()
-              .toISOString(),
-        })
-        .eq(
-          "video_id",
-          currentVideo.id
-        );
-
-    if (
-      jobUpdateError
-    ) {
-      console.error(
-        jobUpdateError
+        updated_at:
+          new Date()
+            .toISOString(),
+      })
+      .eq(
+        "id",
+        video.id
       );
-    }
+
+    await supabase
+      .from(
+        "video_analysis_jobs"
+      )
+      .update({
+        status:
+          eventsCount >
+          0
+            ? "PROCESSING"
+            : "PENDING",
+
+        progress,
+
+        events_detected:
+          eventsCount,
+
+        updated_at:
+          new Date()
+            .toISOString(),
+      })
+      .eq(
+        "video_id",
+        video.id
+      );
 
     setVideo(
       (
@@ -975,17 +1154,12 @@ export default function VideoDetailPage() {
     );
   }
 
-  /* =======================================================
-     PASAR A REVISIÓN
-  ======================================================= */
-
   async function markReview() {
-    if (!video) {
+    if (
+      !video
+    ) {
       return;
     }
-
-    const currentVideo =
-      video;
 
     setUpdatingStatus(
       true
@@ -993,11 +1167,12 @@ export default function VideoDetailPage() {
 
     try {
       const {
-        error:
-          videoError,
+        error,
       } =
         await supabase
-          .from("videos")
+          .from(
+            "videos"
+          )
           .update({
             analysis_status:
               "REVIEW",
@@ -1011,48 +1186,40 @@ export default function VideoDetailPage() {
           })
           .eq(
             "id",
-            currentVideo.id
+            video.id
           );
 
-      if (videoError) {
-        throw videoError;
+      if (
+        error
+      ) {
+        throw error;
       }
 
-      const {
-        error:
-          jobError,
-      } =
-        await supabase
-          .from(
-            "video_analysis_jobs"
-          )
-          .update({
-            status:
-              "REVIEW",
+      await supabase
+        .from(
+          "video_analysis_jobs"
+        )
+        .update({
+          status:
+            "REVIEW",
 
-            progress:
-              95,
+          progress:
+            95,
 
-            events_detected:
-              events.length,
+          events_detected:
+            events.length,
 
-            updated_at:
-              new Date()
-                .toISOString(),
-          })
-          .eq(
-            "video_id",
-            currentVideo.id
-          );
-
-      if (jobError) {
-        console.error(
-          jobError
+          updated_at:
+            new Date()
+              .toISOString(),
+        })
+        .eq(
+          "video_id",
+          video.id
         );
-      }
 
       setVideo({
-        ...currentVideo,
+        ...video,
 
         analysis_status:
           "REVIEW",
@@ -1063,17 +1230,10 @@ export default function VideoDetailPage() {
     } catch (
       error: unknown
     ) {
-      console.error(
-        error
-      );
-
-      const errorMessage =
+      setMessage(
         error instanceof Error
           ? error.message
-          : "No se pudo actualizar el análisis.";
-
-      setMessage(
-        errorMessage
+          : "No se pudo pasar el análisis a revisión."
       );
     } finally {
       setUpdatingStatus(
@@ -1082,17 +1242,12 @@ export default function VideoDetailPage() {
     }
   }
 
-  /* =======================================================
-     COMPLETAR ANÁLISIS
-  ======================================================= */
-
   async function completeAnalysis() {
-    if (!video) {
+    if (
+      !video
+    ) {
       return;
     }
-
-    const currentVideo =
-      video;
 
     setUpdatingStatus(
       true
@@ -1100,11 +1255,12 @@ export default function VideoDetailPage() {
 
     try {
       const {
-        error:
-          videoError,
+        error,
       } =
         await supabase
-          .from("videos")
+          .from(
+            "videos"
+          )
           .update({
             analysis_status:
               "COMPLETED",
@@ -1121,52 +1277,44 @@ export default function VideoDetailPage() {
           })
           .eq(
             "id",
-            currentVideo.id
+            video.id
           );
 
-      if (videoError) {
-        throw videoError;
+      if (
+        error
+      ) {
+        throw error;
       }
 
-      const {
-        error:
-          jobError,
-      } =
-        await supabase
-          .from(
-            "video_analysis_jobs"
-          )
-          .update({
-            status:
-              "COMPLETED",
+      await supabase
+        .from(
+          "video_analysis_jobs"
+        )
+        .update({
+          status:
+            "COMPLETED",
 
-            progress:
-              100,
+          progress:
+            100,
 
-            events_detected:
-              events.length,
+          events_detected:
+            events.length,
 
-            finished_at:
-              new Date()
-                .toISOString(),
+          finished_at:
+            new Date()
+              .toISOString(),
 
-            updated_at:
-              new Date()
-                .toISOString(),
-          })
-          .eq(
-            "video_id",
-            currentVideo.id
-          );
-
-      if (jobError) {
-        console.error(
-          jobError
+          updated_at:
+            new Date()
+              .toISOString(),
+        })
+        .eq(
+          "video_id",
+          video.id
         );
-      }
 
       setVideo({
-        ...currentVideo,
+        ...video,
 
         analysis_status:
           "COMPLETED",
@@ -1180,17 +1328,10 @@ export default function VideoDetailPage() {
     } catch (
       error: unknown
     ) {
-      console.error(
-        error
-      );
-
-      const errorMessage =
+      setMessage(
         error instanceof Error
           ? error.message
-          : "No se pudo completar el análisis.";
-
-      setMessage(
-        errorMessage
+          : "No se pudo completar el análisis."
       );
     } finally {
       setUpdatingStatus(
@@ -1199,19 +1340,14 @@ export default function VideoDetailPage() {
     }
   }
 
-  /* =======================================================
-     ELIMINAR EVENTO
-  ======================================================= */
-
   async function deleteEvent(
     eventId: string
   ) {
-    const confirmed =
-      window.confirm(
+    if (
+      !window.confirm(
         "¿Eliminar este evento?"
-      );
-
-    if (!confirmed) {
+      )
+    ) {
       return;
     }
 
@@ -1228,7 +1364,9 @@ export default function VideoDetailPage() {
           eventId
         );
 
-    if (error) {
+    if (
+      error
+    ) {
       setMessage(
         error.message
       );
@@ -1253,10 +1391,6 @@ export default function VideoDetailPage() {
       updatedEvents.length
     );
   }
-
-  /* =======================================================
-     PREEVALUACIÓN TÉCNICA
-  ======================================================= */
 
   const preEvaluation =
     useMemo<
@@ -1313,45 +1447,19 @@ export default function VideoDetailPage() {
             };
           }
 
-          const values =
-            relatedEvents.map(
-              (
-                item
-              ) =>
-                Number(
-                  item.event_score
-                )
-            );
-
           const average =
-            values.reduce(
+            relatedEvents.reduce(
               (
                 total,
-                value
+                item
               ) =>
                 total +
-                value,
+                Number(
+                  item.event_score
+                ),
               0
             ) /
-            values.length;
-
-          const positiveCount =
-            relatedEvents.filter(
-              (
-                item
-              ) =>
-                item.positive_event ===
-                true
-            ).length;
-
-          const negativeCount =
-            relatedEvents.filter(
-              (
-                item
-              ) =>
-                item.positive_event ===
-                false
-            ).length;
+            relatedEvents.length;
 
           let evidence:
             MetricEvidence =
@@ -1395,10 +1503,22 @@ export default function VideoDetailPage() {
               relatedEvents.length,
 
             positive_count:
-              positiveCount,
+              relatedEvents.filter(
+                (
+                  item
+                ) =>
+                  item.positive_event ===
+                  true
+              ).length,
 
             negative_count:
-              negativeCount,
+              relatedEvents.filter(
+                (
+                  item
+                ) =>
+                  item.positive_event ===
+                  false
+              ).length,
 
             evidence,
           };
@@ -1463,13 +1583,10 @@ export default function VideoDetailPage() {
       metricsWithEvidence,
     ]);
 
-  /* =======================================================
-     GENERAR INFORME DESDE VIDEO
-     CORREGIDO PARA TYPESCRIPT
-  ======================================================= */
-
   function generateReportFromVideo() {
-    if (!video) {
+    if (
+      !video
+    ) {
       setMessage(
         "No se encontró la información del video."
       );
@@ -1477,7 +1594,9 @@ export default function VideoDetailPage() {
       return;
     }
 
-    if (!video.player_id) {
+    if (
+      !video.player_id
+    ) {
       setMessage(
         "El video no tiene un jugador asociado."
       );
@@ -1496,131 +1615,93 @@ export default function VideoDetailPage() {
       return;
     }
 
-    /*
-     * Después de comprobar player_id,
-     * lo guardamos en una constante.
-     *
-     * TypeScript ya lo considera string.
-     */
     const playerId =
       video.player_id;
 
     const currentVideo =
       video;
 
-    const payload = {
-      version: 1,
-
-      video_id:
-        currentVideo.id,
-
-      player_id:
-        playerId,
-
-      match_date:
-        currentVideo.match_date,
-
-      competition:
-        currentVideo.competition_name,
-
-      match_description:
-        matchLabel(
-          currentVideo
-        ),
-
-      metrics:
-        metricsWithEvidence.map(
-          (
-            item
-          ) => ({
-            metric_id:
-              item.metric_id,
-
-            code:
-              item.code,
-
-            score:
-              item.score,
-
-            events_count:
-              item.events_count,
-
-            evidence:
-              item.evidence,
-          })
-        ),
-    };
-
     sessionStorage.setItem(
       "scout_gk_video_preevaluation",
-      JSON.stringify(
-        payload
-      )
+      JSON.stringify({
+        version:
+          1,
+
+        video_id:
+          currentVideo.id,
+
+        player_id:
+          playerId,
+
+        match_date:
+          currentVideo.match_date,
+
+        competition:
+          currentVideo.competition_name,
+
+        match_description:
+          matchLabel(
+            currentVideo
+          ),
+
+        metrics:
+          metricsWithEvidence.map(
+            (
+              item
+            ) => ({
+              metric_id:
+                item.metric_id,
+
+              code:
+                item.code,
+
+              score:
+                item.score,
+
+              events_count:
+                item.events_count,
+
+              evidence:
+                item.evidence,
+            })
+          ),
+      })
     );
 
     window.location.href =
       `/reports/new?player=${playerId}&video=${currentVideo.id}`;
   }
 
-  /* =======================================================
-     DATOS DERIVADOS
-  ======================================================= */
-
-  const youtubeEmbedUrl =
-    useMemo(
-      () =>
-        video
-          ? getYouTubeEmbedUrl(
-              video
-            )
-          : null,
-      [video]
-    );
-
   const positiveCount =
-    useMemo(
-      () =>
-        events.filter(
-          (
-            item
-          ) =>
-            item.positive_event ===
-            true
-        ).length,
-      [events]
-    );
+    events.filter(
+      (
+        item
+      ) =>
+        item.positive_event ===
+        true
+    ).length;
 
   const negativeCount =
-    useMemo(
-      () =>
-        events.filter(
-          (
-            item
-          ) =>
-            item.positive_event ===
-            false
-        ).length,
-      [events]
-    );
+    events.filter(
+      (
+        item
+      ) =>
+        item.positive_event ===
+        false
+    ).length;
 
   const validatedCount =
-    useMemo(
-      () =>
-        events.filter(
-          (
-            item
-          ) =>
-            item.validated ===
-            true
-        ).length,
-      [events]
-    );
+    events.filter(
+      (
+        item
+      ) =>
+        item.validated ===
+        true
+    ).length;
 
-  /* =======================================================
-     ESTADOS DE PANTALLA
-  ======================================================= */
-
-  if (loading) {
+  if (
+    loading
+  ) {
     return (
       <div className="card">
         Cargando video...
@@ -1628,9 +1709,12 @@ export default function VideoDetailPage() {
     );
   }
 
-  if (!video) {
+  if (
+    !video
+  ) {
     return (
       <div className="card">
+
         <h1 className="text-2xl font-black">
           Video no disponible
         </h1>
@@ -1646,24 +1730,29 @@ export default function VideoDetailPage() {
         >
           Volver
         </a>
+
       </div>
     );
   }
 
-  /* =======================================================
-     UI PRINCIPAL
-  ======================================================= */
+  const isYouTube =
+    video.provider ===
+      "YouTube" &&
+    Boolean(
+      video.external_video_id
+    );
 
   return (
     <div className="space-y-8">
 
-      {/* CABECERA */}
-
       <section className="card">
+
         <div className="flex flex-wrap items-start justify-between gap-6">
+
           <div>
+
             <div className="text-sm text-slate-400">
-              Análisis audiovisual
+              Mesa de análisis audiovisual
             </div>
 
             <h1 className="mt-1 text-3xl font-black">
@@ -1681,15 +1770,19 @@ export default function VideoDetailPage() {
               {formatMatchDate(
                 video.match_date
               )}
-
               {" · "}
-
+              {matchLabel(
+                video
+              )}
+              {" · "}
               {video.competition_name ||
                 "Competencia sin registrar"}
             </p>
+
           </div>
 
           <div className="text-right">
+
             <div className="text-xs text-slate-500">
               Estado
             </div>
@@ -1705,21 +1798,14 @@ export default function VideoDetailPage() {
                 0}
               %
             </div>
+
           </div>
+
         </div>
+
       </section>
 
-      {/* RESUMEN */}
-
       <section className="grid gap-4 md:grid-cols-4">
-        <InfoCard
-          label="Partido"
-          value={
-            matchLabel(
-              video
-            )
-          }
-        />
 
         <InfoCard
           label="Eventos"
@@ -1746,15 +1832,24 @@ export default function VideoDetailPage() {
               : "—"
           }
         />
+
+        <InfoCard
+          label="Validados"
+          value={String(
+            validatedCount
+          )}
+        />
+
       </section>
 
-      {/* VIDEO */}
-
       <section className="card">
+
         <div className="flex flex-wrap items-start justify-between gap-4">
+
           <div>
+
             <h2 className="text-xl font-black">
-              Video
+              Video del partido
             </h2>
 
             <p className="mt-1 text-sm text-slate-400">
@@ -1762,50 +1857,109 @@ export default function VideoDetailPage() {
               {video.provider ||
                 "Externa"}
             </p>
+
           </div>
 
           <a
-            href={video.url}
+            href={
+              video.url
+            }
             target="_blank"
             rel="noreferrer"
             className="rounded-lg border border-slate-600 px-4 py-2 text-sm"
           >
             Abrir fuente
           </a>
+
         </div>
 
-        {youtubeEmbedUrl ? (
-          <div className="mt-6 aspect-video overflow-hidden rounded-xl border border-slate-800">
-            <iframe
-              src={
-                youtubeEmbedUrl
-              }
-              title={
-                video.title ||
-                "Video de scouting"
-              }
-              className="h-full w-full"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-            />
-          </div>
+        {isYouTube ? (
+          <>
+            <div className="mt-6 aspect-video overflow-hidden rounded-xl border border-slate-800 bg-black">
+              <div
+                ref={
+                  playerContainerRef
+                }
+                className="h-full w-full"
+              />
+            </div>
+
+            <div className="mt-5 flex flex-wrap items-center gap-3">
+
+              <button
+                type="button"
+                onClick={() =>
+                  seekRelative(
+                    -5
+                  )
+                }
+                disabled={
+                  !playerReady
+                }
+                className="rounded-lg border border-slate-600 px-4 py-2 text-sm"
+              >
+                − 5 s
+              </button>
+
+              <button
+                type="button"
+                onClick={
+                  captureCurrentTime
+                }
+                disabled={
+                  !playerReady
+                }
+                className="btn"
+              >
+                Capturar tiempo actual
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  seekRelative(
+                    5
+                  )
+                }
+                disabled={
+                  !playerReady
+                }
+                className="rounded-lg border border-slate-600 px-4 py-2 text-sm"
+              >
+                + 5 s
+              </button>
+
+              <div className="ml-auto rounded-lg bg-slate-950/40 px-4 py-2 font-black">
+                {formatSeconds(
+                  timestamp
+                )}
+
+                {duration >
+                0
+                  ? ` / ${formatSeconds(
+                      duration
+                    )}`
+                  : ""}
+              </div>
+
+            </div>
+          </>
         ) : (
           <div className="mt-6 rounded-xl border border-slate-800 bg-slate-950/30 p-5 text-sm text-slate-400">
-            Esta fuente no puede reproducirse directamente dentro de Scout GK.
-            Abrí el video en otra pestaña y utilizá el timestamp manual.
+            Esta fuente no permite sincronización automática. Abrila en otra pestaña y cargá el timestamp manualmente.
           </div>
         )}
+
       </section>
 
-      {/* REGISTRO EVENTO */}
-
       <section className="card">
+
         <h2 className="text-xl font-black">
           Registrar evento
         </h2>
 
         <p className="mt-1 text-sm text-slate-400">
-          Registrá las acciones relevantes del arquero durante el partido.
+          El tiempo se toma automáticamente del reproductor cuando está disponible.
         </p>
 
         <form
@@ -1814,11 +1968,11 @@ export default function VideoDetailPage() {
           }
           className="mt-6 space-y-6"
         >
+
           <div className="grid gap-4 md:grid-cols-2">
 
-            {/* TIPO */}
-
             <div>
+
               <label className="label">
                 Tipo de evento
               </label>
@@ -1837,6 +1991,7 @@ export default function VideoDetailPage() {
                   )
                 }
               >
+
                 {eventTypes.map(
                   (
                     item
@@ -1853,12 +2008,13 @@ export default function VideoDetailPage() {
                     </option>
                   )
                 )}
+
               </select>
+
             </div>
 
-            {/* MÉTRICA */}
-
             <div>
+
               <label className="label">
                 Métrica asociada
               </label>
@@ -1877,6 +2033,7 @@ export default function VideoDetailPage() {
                   )
                 }
               >
+
                 <option value="">
                   Sin métrica
                 </option>
@@ -1897,23 +2054,25 @@ export default function VideoDetailPage() {
                     </option>
                   )
                 )}
+
               </select>
+
             </div>
+
           </div>
 
-          {/* TIMESTAMP */}
-
           <div>
+
             <label className="label">
               Timestamp
             </label>
 
-            <div className="grid gap-4 md:grid-cols-[1fr_120px] md:items-center">
+            <div className="grid gap-4 md:grid-cols-[1fr_140px] md:items-center">
+
               <input
                 className="input"
                 type="number"
                 min="0"
-                max="10800"
                 value={
                   timestamp
                 }
@@ -1934,17 +2093,19 @@ export default function VideoDetailPage() {
                   timestamp
                 )}
               </div>
+
             </div>
+
           </div>
 
-          {/* SCORE */}
-
           <div>
+
             <label className="label">
               Score del evento
             </label>
 
             <div className="flex items-center gap-5">
+
               <input
                 type="range"
                 min="1"
@@ -1969,18 +2130,21 @@ export default function VideoDetailPage() {
               <div className="min-w-14 rounded-lg bg-slate-800 px-3 py-2 text-center text-xl font-black">
                 {eventScore}
               </div>
+
             </div>
+
           </div>
 
-          {/* IMPACTO */}
-
           <div>
+
             <label className="label">
               Impacto
             </label>
 
             <div className="flex flex-wrap gap-6">
+
               <label className="flex items-center gap-2">
+
                 <input
                   type="radio"
                   name="impact"
@@ -1995,9 +2159,11 @@ export default function VideoDetailPage() {
                 />
 
                 Positivo
+
               </label>
 
               <label className="flex items-center gap-2">
+
                 <input
                   type="radio"
                   name="impact"
@@ -2012,13 +2178,15 @@ export default function VideoDetailPage() {
                 />
 
                 Negativo
+
               </label>
+
             </div>
+
           </div>
 
-          {/* RESULTADO */}
-
           <div>
+
             <label className="label">
               Resultado
             </label>
@@ -2026,13 +2194,13 @@ export default function VideoDetailPage() {
             <input
               className="input"
               name="result"
-              placeholder="Ej. Control seguro, despeje, pérdida, gol evitado..."
+              placeholder="Control, despeje, blocaje, pérdida, gol evitado..."
             />
+
           </div>
 
-          {/* COMENTARIO */}
-
           <div>
+
             <label className="label">
               Comentario técnico
             </label>
@@ -2040,8 +2208,9 @@ export default function VideoDetailPage() {
             <textarea
               className="input min-h-28"
               name="comment"
-              placeholder="Decisión, ejecución, contexto y lectura técnica de la acción..."
+              placeholder="Lectura, decisión, ejecución y contexto de la acción..."
             />
+
           </div>
 
           {message && (
@@ -2051,6 +2220,7 @@ export default function VideoDetailPage() {
           )}
 
           <div className="flex justify-end">
+
             <button
               type="submit"
               className="btn"
@@ -2064,22 +2234,27 @@ export default function VideoDetailPage() {
                     timestamp
                   )}`}
             </button>
+
           </div>
+
         </form>
+
       </section>
 
-      {/* PREEVALUACIÓN */}
-
       <section className="card">
+
         <div className="flex flex-wrap items-start justify-between gap-5">
+
           <div>
+
             <h2 className="text-xl font-black">
               Preevaluación técnica derivada del video
             </h2>
 
             <p className="mt-1 text-sm text-slate-400">
-              Solo se calculan variables que cuentan con eventos validados.
+              Las métricas sin evidencia permanecen sin puntuación.
             </p>
+
           </div>
 
           <button
@@ -2095,9 +2270,11 @@ export default function VideoDetailPage() {
           >
             Generar informe desde video
           </button>
+
         </div>
 
         <div className="mt-6 grid gap-4 md:grid-cols-2">
+
           {preEvaluation.map(
             (
               item
@@ -2108,8 +2285,11 @@ export default function VideoDetailPage() {
                 }
                 className="rounded-xl border border-slate-800 bg-slate-950/20 p-4"
               >
+
                 <div className="flex items-start justify-between gap-4">
+
                   <div>
+
                     <div className="font-bold">
                       {item.label}
                     </div>
@@ -2126,6 +2306,7 @@ export default function VideoDetailPage() {
                         item.evidence
                       )}
                     </div>
+
                   </div>
 
                   <div className="text-2xl font-black">
@@ -2136,33 +2317,30 @@ export default function VideoDetailPage() {
                         )
                       : "—"}
                   </div>
+
                 </div>
 
                 {item.events_count >
                   0 && (
                   <div className="mt-4 text-xs text-slate-500">
                     Positivos:{" "}
-                    {
-                      item.positive_count
-                    }
-
+                    {item.positive_count}
                     {" · "}
-
                     Negativos:{" "}
-                    {
-                      item.negative_count
-                    }
+                    {item.negative_count}
                   </div>
                 )}
+
               </div>
             )
           )}
+
         </div>
+
       </section>
 
-      {/* RESUMEN EVENTOS */}
-
       <section className="grid gap-4 md:grid-cols-3">
+
         <InfoCard
           label="Eventos positivos"
           value={String(
@@ -2183,23 +2361,27 @@ export default function VideoDetailPage() {
             validatedCount
           )}
         />
+
       </section>
 
-      {/* HISTORIAL EVENTOS */}
-
       <section className="card">
+
         <div className="flex flex-wrap items-start justify-between gap-5">
+
           <div>
+
             <h2 className="text-xl font-black">
-              Eventos registrados
+              Cronología de eventos
             </h2>
 
             <p className="mt-1 text-sm text-slate-400">
-              Evidencia cronológica del análisis audiovisual.
+              Evidencia ordenada por momento del partido.
             </p>
+
           </div>
 
           <div className="flex flex-wrap gap-2">
+
             <button
               type="button"
               className="rounded-lg border border-slate-600 px-4 py-2 text-sm"
@@ -2229,7 +2411,9 @@ export default function VideoDetailPage() {
             >
               Completar análisis
             </button>
+
           </div>
+
         </div>
 
         {events.length ===
@@ -2239,6 +2423,7 @@ export default function VideoDetailPage() {
           </div>
         ) : (
           <div className="mt-6 space-y-3">
+
             {events.map(
               (
                 item
@@ -2249,15 +2434,39 @@ export default function VideoDetailPage() {
                   }
                   className="rounded-xl border border-slate-800 p-4"
                 >
+
                   <div className="flex flex-wrap items-start justify-between gap-5">
+
                     <div className="flex gap-4">
-                      <div className="min-w-16 text-xl font-black">
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const player =
+                            youtubePlayerRef.current;
+
+                          if (
+                            player
+                          ) {
+                            player.seekTo(
+                              item.timestamp_start_seconds,
+                              true
+                            );
+
+                            setTimestamp(
+                              item.timestamp_start_seconds
+                            );
+                          }
+                        }}
+                        className="min-w-16 text-left text-xl font-black hover:text-sky-300"
+                      >
                         {formatSeconds(
                           item.timestamp_start_seconds
                         )}
-                      </div>
+                      </button>
 
                       <div>
+
                         <div className="font-bold">
                           {item.event_subtype ||
                             item.event_type ||
@@ -2269,8 +2478,9 @@ export default function VideoDetailPage() {
                             "Sin categoría"}
 
                           {item.evaluation_metrics
-                            ?.label &&
-                            ` · ${item.evaluation_metrics.label}`}
+                            ?.label
+                            ? ` · ${item.evaluation_metrics.label}`
+                            : ""}
                         </div>
 
                         {item.result && (
@@ -2284,11 +2494,15 @@ export default function VideoDetailPage() {
                             {item.comment}
                           </p>
                         )}
+
                       </div>
+
                     </div>
 
                     <div className="flex items-start gap-5">
+
                       <div className="text-right">
+
                         <div className="text-xs text-slate-500">
                           Score
                         </div>
@@ -2307,6 +2521,7 @@ export default function VideoDetailPage() {
                             ? "Negativo"
                             : "Sin clasificación"}
                         </div>
+
                       </div>
 
                       <button
@@ -2320,18 +2535,22 @@ export default function VideoDetailPage() {
                       >
                         Eliminar
                       </button>
+
                     </div>
+
                   </div>
+
                 </div>
               )
             )}
+
           </div>
         )}
+
       </section>
 
-      {/* NAVEGACIÓN */}
-
       <div className="flex flex-wrap justify-between gap-3 pb-10">
+
         <a
           href="/videos"
           className="rounded-lg border border-slate-600 px-5 py-3"
@@ -2347,14 +2566,12 @@ export default function VideoDetailPage() {
             Ver ficha del arquero
           </a>
         )}
+
       </div>
+
     </div>
   );
 }
-
-/* =========================================================
-   COMPONENTES
-========================================================= */
 
 function InfoCard({
   label,
@@ -2365,6 +2582,7 @@ function InfoCard({
 }) {
   return (
     <div className="card">
+
       <div className="text-xs text-slate-400">
         {label}
       </div>
@@ -2372,6 +2590,7 @@ function InfoCard({
       <div className="mt-2 text-xl font-black">
         {value}
       </div>
+
     </div>
   );
 }
