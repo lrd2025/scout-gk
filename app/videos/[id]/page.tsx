@@ -2040,7 +2040,7 @@ export default function VideoDetailPage() {
                 </div>
 
               )
-            )}
+            ))}
 
         </div>
 
