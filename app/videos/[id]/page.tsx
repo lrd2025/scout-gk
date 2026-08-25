@@ -16,7 +16,6 @@ type VideoRow = {
 
   title: string | null;
   description: string | null;
-
   url: string;
 
   provider: string | null;
@@ -52,11 +51,8 @@ type EventType = {
   code: string;
   label: string;
   category: string;
-
   metric_code: string | null;
-
   positive_default: boolean | null;
-
   sort_order: number;
 };
 
@@ -64,6 +60,8 @@ type Metric = {
   id: string;
   code: string;
   label: string;
+  group_name: string;
+  sort_order: number;
 };
 
 type VideoEvent = {
@@ -83,13 +81,11 @@ type VideoEvent = {
   positive_event: boolean | null;
 
   result: string | null;
-
   comment: string | null;
 
   source_type: string | null;
 
   confidence: number | null;
-
   validated: boolean | null;
 
   metric_id: string | null;
@@ -98,6 +94,21 @@ type VideoEvent = {
     label: string;
     code: string;
   } | null;
+};
+
+type MetricPreEvaluation = {
+  metric_id: string;
+  code: string;
+  label: string;
+  group_name: string;
+
+  score: number | null;
+
+  events_count: number;
+  positive_count: number;
+  negative_count: number;
+
+  evidence: "NONE" | "LOW" | "MODERATE" | "HIGH";
 };
 
 function formatSeconds(totalSeconds: number) {
@@ -113,9 +124,7 @@ function formatSeconds(totalSeconds: number) {
   const seconds =
     safeSeconds % 60;
 
-  return `${minutes}:${String(
-    seconds
-  ).padStart(
+  return `${minutes}:${String(seconds).padStart(
     2,
     "0"
   )}`;
@@ -147,10 +156,8 @@ function matchLabel(
     "Visitante";
 
   if (
-    video.home_score !==
-      null &&
-    video.away_score !==
-      null
+    video.home_score !== null &&
+    video.away_score !== null
   ) {
     return `${home} ${video.home_score} - ${video.away_score} ${away}`;
   }
@@ -159,10 +166,7 @@ function matchLabel(
 }
 
 function statusLabel(
-  value:
-    | string
-    | null
-    | undefined
+  value: string | null | undefined
 ) {
   switch (value) {
     case "UNANALYZED":
@@ -184,10 +188,25 @@ function statusLabel(
       return "Error";
 
     default:
-      return (
-        value ||
-        "Sin estado"
-      );
+      return value || "Sin estado";
+  }
+}
+
+function evidenceLabel(
+  value: MetricPreEvaluation["evidence"]
+) {
+  switch (value) {
+    case "HIGH":
+      return "Alta";
+
+    case "MODERATE":
+      return "Moderada";
+
+    case "LOW":
+      return "Baja";
+
+    default:
+      return "Sin evidencia";
   }
 }
 
@@ -195,8 +214,7 @@ function getYouTubeEmbedUrl(
   video: VideoRow
 ) {
   if (
-    video.provider !==
-      "YouTube" ||
+    video.provider !== "YouTube" ||
     !video.external_video_id
   ) {
     return null;
@@ -223,25 +241,19 @@ export default function VideoDetailPage() {
     eventTypes,
     setEventTypes,
   ] =
-    useState<EventType[]>(
-      []
-    );
+    useState<EventType[]>([]);
 
   const [
     metrics,
     setMetrics,
   ] =
-    useState<Metric[]>(
-      []
-    );
+    useState<Metric[]>([]);
 
   const [
     events,
     setEvents,
   ] =
-    useState<VideoEvent[]>(
-      []
-    );
+    useState<VideoEvent[]>([]);
 
   const [
     selectedEventType,
@@ -306,14 +318,11 @@ export default function VideoDetailPage() {
     setMessage("");
 
     const {
-      data:
-        authData,
+      data: authData,
     } =
       await supabase.auth.getSession();
 
-    if (
-      !authData.session
-    ) {
+    if (!authData.session) {
       setMessage(
         "Necesitás iniciar sesión."
       );
@@ -331,9 +340,7 @@ export default function VideoDetailPage() {
     ] =
       await Promise.all([
         supabase
-          .from(
-            "videos"
-          )
+          .from("videos")
           .select(`
             id,
             title,
@@ -397,7 +404,9 @@ export default function VideoDetailPage() {
           .select(`
             id,
             code,
-            label
+            label,
+            group_name,
+            sort_order
           `)
           .eq(
             "position",
@@ -406,6 +415,12 @@ export default function VideoDetailPage() {
           .eq(
             "active",
             true
+          )
+          .order(
+            "sort_order",
+            {
+              ascending: true,
+            }
           ),
 
         supabase
@@ -450,8 +465,7 @@ export default function VideoDetailPage() {
       videoResponse.error
     ) {
       setMessage(
-        videoResponse.error
-          .message
+        videoResponse.error.message
       );
 
       setLoading(false);
@@ -459,32 +473,11 @@ export default function VideoDetailPage() {
       return;
     }
 
-    if (
-      eventTypesResponse.error
-    ) {
-      setMessage(
-        eventTypesResponse.error
-          .message
-      );
-    }
-
-    if (
-      metricsResponse.error
-    ) {
-      setMessage(
-        metricsResponse.error
-          .message
-      );
-    }
-
-    if (
-      eventsResponse.error
-    ) {
-      setMessage(
-        eventsResponse.error
-          .message
-      );
-    }
+    const loadedMetrics =
+      (
+        metricsResponse.data ||
+        []
+      ) as Metric[];
 
     const loadedEventTypes =
       (
@@ -496,15 +489,12 @@ export default function VideoDetailPage() {
       videoResponse.data as unknown as VideoRow
     );
 
-    setEventTypes(
-      loadedEventTypes
+    setMetrics(
+      loadedMetrics
     );
 
-    setMetrics(
-      (
-        metricsResponse.data ||
-        []
-      ) as Metric[]
+    setEventTypes(
+      loadedEventTypes
     );
 
     setEvents(
@@ -514,46 +504,42 @@ export default function VideoDetailPage() {
       ) as unknown as VideoEvent[]
     );
 
+    /*
+     * Inicialización correcta:
+     * ya tenemos las métricas cargadas localmente.
+     */
     if (
       loadedEventTypes.length >
       0
     ) {
-      applyEventType(
-        loadedEventTypes[0]
+      const first =
+        loadedEventTypes[0];
+
+      setSelectedEventType(
+        first.code
+      );
+
+      setPositiveEvent(
+        first.positive_default ??
+          true
+      );
+
+      const relatedMetric =
+        loadedMetrics.find(
+          (
+            metric
+          ) =>
+            metric.code ===
+            first.metric_code
+        );
+
+      setSelectedMetricId(
+        relatedMetric?.id ||
+          ""
       );
     }
 
     setLoading(false);
-  }
-
-  function applyEventType(
-    eventType: EventType
-  ) {
-    setSelectedEventType(
-      eventType.code
-    );
-
-    setPositiveEvent(
-      eventType.positive_default ??
-        true
-    );
-
-    const relatedMetric =
-      metrics.find(
-        (
-          metric
-        ) =>
-          metric.code ===
-          eventType.metric_code
-      );
-
-    if (
-      relatedMetric
-    ) {
-      setSelectedMetricId(
-        relatedMetric.id
-      );
-    }
   }
 
   function handleEventTypeChange(
@@ -568,9 +554,7 @@ export default function VideoDetailPage() {
           code
       );
 
-    if (
-      !eventType
-    ) {
+    if (!eventType) {
       return;
     }
 
@@ -604,16 +588,14 @@ export default function VideoDetailPage() {
   ) {
     event.preventDefault();
 
-    if (
-      !video
-    ) {
-      return;
-    }
-
     const form =
       new FormData(
         event.currentTarget
       );
+
+    if (!video) {
+      return;
+    }
 
     const eventType =
       eventTypes.find(
@@ -624,9 +606,7 @@ export default function VideoDetailPage() {
           selectedEventType
       );
 
-    if (
-      !eventType
-    ) {
+    if (!eventType) {
       setMessage(
         "Seleccioná un tipo de evento."
       );
@@ -748,9 +728,7 @@ export default function VideoDetailPage() {
           `)
           .single();
 
-      if (
-        error
-      ) {
+      if (error) {
         throw error;
       }
 
@@ -781,11 +759,6 @@ export default function VideoDetailPage() {
 
       setEventScore(5);
 
-      const htmlForm =
-        event.currentTarget;
-
-      htmlForm.reset();
-
       setSavingEvent(false);
     } catch (
       error: any
@@ -806,9 +779,7 @@ export default function VideoDetailPage() {
   async function updateAnalysisState(
     eventsCount: number
   ) {
-    if (
-      !video
-    ) {
+    if (!video) {
       return;
     }
 
@@ -828,9 +799,7 @@ export default function VideoDetailPage() {
       );
 
     await supabase
-      .from(
-        "videos"
-      )
+      .from("videos")
       .update({
         analysis_status:
           nextStatus,
@@ -860,10 +829,6 @@ export default function VideoDetailPage() {
         events_detected:
           eventsCount,
 
-        started_at:
-          new Date()
-            .toISOString(),
-
         updated_at:
           new Date()
             .toISOString(),
@@ -892,9 +857,7 @@ export default function VideoDetailPage() {
   }
 
   async function markReview() {
-    if (
-      !video
-    ) {
+    if (!video) {
       return;
     }
 
@@ -903,9 +866,7 @@ export default function VideoDetailPage() {
     );
 
     await supabase
-      .from(
-        "videos"
-      )
+      .from("videos")
       .update({
         analysis_status:
           "REVIEW",
@@ -945,17 +906,15 @@ export default function VideoDetailPage() {
         video.id
       );
 
-    setVideo(
-      {
-        ...video,
+    setVideo({
+      ...video,
 
-        analysis_status:
-          "REVIEW",
+      analysis_status:
+        "REVIEW",
 
-        processing_progress:
-          95,
-      }
-    );
+      processing_progress:
+        95,
+    });
 
     setUpdatingStatus(
       false
@@ -963,9 +922,7 @@ export default function VideoDetailPage() {
   }
 
   async function completeAnalysis() {
-    if (
-      !video
-    ) {
+    if (!video) {
       return;
     }
 
@@ -974,9 +931,7 @@ export default function VideoDetailPage() {
     );
 
     await supabase
-      .from(
-        "videos"
-      )
+      .from("videos")
       .update({
         analysis_status:
           "COMPLETED",
@@ -1023,20 +978,18 @@ export default function VideoDetailPage() {
         video.id
       );
 
-    setVideo(
-      {
-        ...video,
+    setVideo({
+      ...video,
 
-        analysis_status:
-          "COMPLETED",
+      analysis_status:
+        "COMPLETED",
 
-        processing_progress:
-          100,
+      processing_progress:
+        100,
 
-        human_validated:
-          true,
-      }
-    );
+      human_validated:
+        true,
+    });
 
     setUpdatingStatus(
       false
@@ -1051,9 +1004,7 @@ export default function VideoDetailPage() {
         "¿Eliminar este evento?"
       );
 
-    if (
-      !confirmed
-    ) {
+    if (!confirmed) {
       return;
     }
 
@@ -1070,9 +1021,7 @@ export default function VideoDetailPage() {
           eventId
         );
 
-    if (
-      error
-    ) {
+    if (error) {
       setMessage(
         error.message
       );
@@ -1096,6 +1045,294 @@ export default function VideoDetailPage() {
     await updateAnalysisState(
       updatedEvents.length
     );
+  }
+
+  /*
+   * PRE-EVALUACIÓN
+   *
+   * Solamente usa eventos:
+   * - asociados a una métrica
+   * - con score válido
+   * - validados
+   *
+   * Si una métrica no tiene eventos,
+   * score = null.
+   */
+  const preEvaluation =
+    useMemo<
+      MetricPreEvaluation[]
+    >(() => {
+      return metrics.map(
+        (
+          metric
+        ) => {
+          const relatedEvents =
+            events.filter(
+              (
+                item
+              ) =>
+                item.metric_id ===
+                  metric.id &&
+                item.validated ===
+                  true &&
+                item.event_score !==
+                  null
+            );
+
+          if (
+            relatedEvents.length ===
+            0
+          ) {
+            return {
+              metric_id:
+                metric.id,
+
+              code:
+                metric.code,
+
+              label:
+                metric.label,
+
+              group_name:
+                metric.group_name,
+
+              score:
+                null,
+
+              events_count:
+                0,
+
+              positive_count:
+                0,
+
+              negative_count:
+                0,
+
+              evidence:
+                "NONE",
+            };
+          }
+
+          const values =
+            relatedEvents.map(
+              (
+                item
+              ) =>
+                Number(
+                  item.event_score
+                )
+            );
+
+          const average =
+            values.reduce(
+              (
+                total,
+                value
+              ) =>
+                total +
+                value,
+              0
+            ) /
+            values.length;
+
+          const positiveCount =
+            relatedEvents.filter(
+              (
+                item
+              ) =>
+                item.positive_event ===
+                true
+            ).length;
+
+          const negativeCount =
+            relatedEvents.filter(
+              (
+                item
+              ) =>
+                item.positive_event ===
+                false
+            ).length;
+
+          let evidence:
+            MetricPreEvaluation["evidence"] =
+            "LOW";
+
+          if (
+            relatedEvents.length >=
+            5
+          ) {
+            evidence =
+              "HIGH";
+          } else if (
+            relatedEvents.length >=
+            3
+          ) {
+            evidence =
+              "MODERATE";
+          }
+
+          return {
+            metric_id:
+              metric.id,
+
+            code:
+              metric.code,
+
+            label:
+              metric.label,
+
+            group_name:
+              metric.group_name,
+
+            score:
+              Number(
+                average.toFixed(
+                  2
+                )
+              ),
+
+            events_count:
+              relatedEvents.length,
+
+            positive_count:
+              positiveCount,
+
+            negative_count:
+              negativeCount,
+
+            evidence,
+          };
+        }
+      );
+    }, [
+      metrics,
+      events,
+    ]);
+
+  const metricsWithEvidence =
+    preEvaluation.filter(
+      (
+        item
+      ) =>
+        item.score !==
+        null
+    );
+
+  const preEvaluationScore =
+    useMemo(() => {
+      const values =
+        metricsWithEvidence
+          .map(
+            (
+              item
+            ) =>
+              item.score
+          )
+          .filter(
+            (
+              value
+            ): value is number =>
+              value !==
+              null
+          );
+
+      if (
+        values.length ===
+        0
+      ) {
+        return null;
+      }
+
+      return (
+        values.reduce(
+          (
+            total,
+            value
+          ) =>
+            total +
+            value,
+          0
+        ) /
+        values.length
+      );
+    }, [
+      metricsWithEvidence,
+    ]);
+
+  function generateReportFromVideo() {
+    if (
+      !video.player_id
+    ) {
+      setMessage(
+        "El video no tiene un jugador asociado."
+      );
+
+      return;
+    }
+
+    if (
+      metricsWithEvidence.length ===
+      0
+    ) {
+      setMessage(
+        "Todavía no hay eventos suficientes para generar una preevaluación."
+      );
+
+      return;
+    }
+
+    const payload = {
+      version: 1,
+
+      video_id:
+        video.id,
+
+      player_id:
+        video.player_id,
+
+      match_date:
+        video.match_date,
+
+      competition:
+        video.competition_name,
+
+      match_description:
+        matchLabel(
+          video
+        ),
+
+      metrics:
+        metricsWithEvidence.map(
+          (
+            item
+          ) => ({
+            metric_id:
+              item.metric_id,
+
+            code:
+              item.code,
+
+            score:
+              item.score,
+
+            events_count:
+              item.events_count,
+
+            evidence:
+              item.evidence,
+          })
+        ),
+    };
+
+    sessionStorage.setItem(
+      "scout_gk_video_preevaluation",
+      JSON.stringify(
+        payload
+      )
+    );
+
+    window.location.href =
+      `/reports/new?player=${video.player_id}&video=${video.id}`;
   }
 
   const youtubeEmbedUrl =
@@ -1153,27 +1390,7 @@ export default function VideoDetailPage() {
       events,
     ]);
 
-  const positiveCount =
-    events.filter(
-      (
-        item
-      ) =>
-        item.positive_event ===
-        true
-    ).length;
-
-  const negativeCount =
-    events.filter(
-      (
-        item
-      ) =>
-        item.positive_event ===
-        false
-    ).length;
-
-  if (
-    loading
-  ) {
+  if (loading) {
     return (
       <div className="card">
         Cargando video...
@@ -1181,9 +1398,7 @@ export default function VideoDetailPage() {
     );
   }
 
-  if (
-    !video
-  ) {
+  if (!video) {
     return (
       <div className="card">
 
@@ -1210,8 +1425,6 @@ export default function VideoDetailPage() {
   return (
     <div className="space-y-8">
 
-      {/* CABECERA */}
-
       <section className="card">
 
         <div className="flex flex-wrap items-start justify-between gap-6">
@@ -1237,9 +1450,7 @@ export default function VideoDetailPage() {
               {formatMatchDate(
                 video.match_date
               )}
-
               {" · "}
-
               {video.competition_name ||
                 "Competencia sin registrar"}
             </p>
@@ -1270,8 +1481,6 @@ export default function VideoDetailPage() {
 
       </section>
 
-      {/* DATOS */}
-
       <section className="grid gap-4 md:grid-cols-4">
 
         <InfoCard
@@ -1284,14 +1493,6 @@ export default function VideoDetailPage() {
         />
 
         <InfoCard
-          label="Equipo arquero"
-          value={
-            video.goalkeeper_team ||
-            "Sin registrar"
-          }
-        />
-
-        <InfoCard
           label="Eventos"
           value={String(
             events.length
@@ -1299,11 +1500,18 @@ export default function VideoDetailPage() {
         />
 
         <InfoCard
-          label="Score eventos"
+          label="Métricas con evidencia"
+          value={String(
+            metricsWithEvidence.length
+          )}
+        />
+
+        <InfoCard
+          label="Preevaluación"
           value={
-            averageEventScore !==
+            preEvaluationScore !==
             null
-              ? averageEventScore.toFixed(
+              ? preEvaluationScore.toFixed(
                   2
                 )
               : "—"
@@ -1312,11 +1520,9 @@ export default function VideoDetailPage() {
 
       </section>
 
-      {/* REPRODUCTOR */}
-
       <section className="card">
 
-        <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap justify-between gap-4">
 
           <div>
 
@@ -1347,18 +1553,13 @@ export default function VideoDetailPage() {
 
         {youtubeEmbedUrl ? (
 
-          <div className="mt-6 aspect-video overflow-hidden rounded-xl border border-slate-800">
+          <div className="mt-6 aspect-video overflow-hidden rounded-xl">
 
             <iframe
               src={
                 youtubeEmbedUrl
               }
-              title={
-                video.title ||
-                "Video"
-              }
               className="h-full w-full"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
               allowFullScreen
             />
 
@@ -1366,227 +1567,160 @@ export default function VideoDetailPage() {
 
         ) : (
 
-          <div className="mt-6 rounded-xl border border-slate-800 bg-slate-950/30 p-6">
-
-            <p className="text-sm text-slate-300">
-              Esta fuente no puede reproducirse directamente dentro de Scout GK.
-            </p>
-
-            <p className="mt-2 text-xs text-slate-500">
-              Abrí el video en otra pestaña y utilizá el registro manual de timestamps.
-            </p>
-
+          <div className="mt-6 rounded-xl border border-slate-800 p-5 text-sm text-slate-400">
+            Utilizá la fuente externa y registrá los timestamps manualmente.
           </div>
 
         )}
 
       </section>
 
-      {/* CONTROL DE TIEMPO */}
-
       <section className="card">
-
-        <h2 className="text-xl font-black">
-          Momento del video
-        </h2>
-
-        <div className="mt-5 grid gap-4 md:grid-cols-[1fr_160px]">
-
-          <div>
-
-            <label className="label">
-              Timestamp en segundos
-            </label>
-
-            <input
-              type="range"
-              min="0"
-              max="7200"
-              step="1"
-              value={
-                timestamp
-              }
-              onChange={(
-                event
-              ) =>
-                setTimestamp(
-                  Number(
-                    event.target
-                      .value
-                  )
-                )
-              }
-              className="w-full"
-            />
-
-          </div>
-
-          <div>
-
-            <label className="label">
-              Tiempo
-            </label>
-
-            <input
-              className="input"
-              type="number"
-              min="0"
-              value={
-                timestamp
-              }
-              onChange={(
-                event
-              ) =>
-                setTimestamp(
-                  Number(
-                    event.target
-                      .value
-                  )
-                )
-              }
-            />
-
-          </div>
-
-        </div>
-
-        <div className="mt-4 text-3xl font-black">
-          {formatSeconds(
-            timestamp
-          )}
-        </div>
-
-      </section>
-
-      {/* NUEVO EVENTO */}
-
-      <form
-        onSubmit={
-          handleSaveEvent
-        }
-        className="card"
-      >
 
         <h2 className="text-xl font-black">
           Registrar evento
         </h2>
 
-        <p className="mt-1 text-sm text-slate-400">
-          Cada evento queda asociado al video, jugador, timestamp y métrica correspondiente.
-        </p>
+        <form
+          onSubmit={
+            handleSaveEvent
+          }
+          className="mt-6 space-y-5"
+        >
 
-        <div className="mt-6 grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-2">
 
-          <div>
+            <div>
 
-            <label className="label">
-              Tipo de evento
-            </label>
+              <label className="label">
+                Tipo
+              </label>
 
-            <select
-              className="input"
-              value={
-                selectedEventType
-              }
-              onChange={(
-                event
-              ) =>
-                handleEventTypeChange(
-                  event.target
-                    .value
-                )
-              }
-            >
+              <select
+                className="input"
+                value={
+                  selectedEventType
+                }
+                onChange={(
+                  event
+                ) =>
+                  handleEventTypeChange(
+                    event.target
+                      .value
+                  )
+                }
+              >
 
-              {eventTypes.map(
-                (
-                  item
-                ) => (
+                {eventTypes.map(
+                  (
+                    item
+                  ) => (
+                    <option
+                      key={
+                        item.id
+                      }
+                      value={
+                        item.code
+                      }
+                    >
+                      {item.label}
+                    </option>
+                  )
+                )}
 
-                  <option
-                    key={
-                      item.id
-                    }
-                    value={
-                      item.code
-                    }
-                  >
-                    {item.label}
-                  </option>
+              </select>
 
-                )
-              )}
+            </div>
 
-            </select>
+            <div>
 
-          </div>
+              <label className="label">
+                Métrica
+              </label>
 
-          <div>
+              <select
+                className="input"
+                value={
+                  selectedMetricId
+                }
+                onChange={(
+                  event
+                ) =>
+                  setSelectedMetricId(
+                    event.target
+                      .value
+                  )
+                }
+              >
 
-            <label className="label">
-              Métrica asociada
-            </label>
+                <option value="">
+                  Sin métrica
+                </option>
 
-            <select
-              className="input"
-              value={
-                selectedMetricId
-              }
-              onChange={(
-                event
-              ) =>
-                setSelectedMetricId(
-                  event.target
-                    .value
-                )
-              }
-            >
+                {metrics.map(
+                  (
+                    metric
+                  ) => (
+                    <option
+                      key={
+                        metric.id
+                      }
+                      value={
+                        metric.id
+                      }
+                    >
+                      {metric.label}
+                    </option>
+                  )
+                )}
 
-              <option value="">
-                Sin métrica
-              </option>
+              </select>
 
-              {metrics.map(
-                (
-                  metric
-                ) => (
-
-                  <option
-                    key={
-                      metric.id
-                    }
-                    value={
-                      metric.id
-                    }
-                  >
-                    {metric.label}
-                  </option>
-
-                )
-              )}
-
-            </select>
-
-          </div>
-
-          <div>
-
-            <label className="label">
-              Resultado
-            </label>
-
-            <input
-              className="input"
-              name="result"
-              placeholder="Ej. Control seguro, despeje, pérdida..."
-            />
+            </div>
 
           </div>
 
           <div>
 
             <label className="label">
-              Evaluación
+              Timestamp
+            </label>
+
+            <div className="flex items-center gap-4">
+
+              <input
+                className="input"
+                type="number"
+                min="0"
+                value={
+                  timestamp
+                }
+                onChange={(
+                  event
+                ) =>
+                  setTimestamp(
+                    Number(
+                      event.target
+                        .value
+                    )
+                  )
+                }
+              />
+
+              <div className="min-w-24 text-xl font-black">
+                {formatSeconds(
+                  timestamp
+                )}
+              </div>
+
+            </div>
+
+          </div>
+
+          <div>
+
+            <label className="label">
+              Score
             </label>
 
             <div className="flex items-center gap-4">
@@ -1595,7 +1729,6 @@ export default function VideoDetailPage() {
                 type="range"
                 min="1"
                 max="10"
-                step="1"
                 value={
                   eventScore
                 }
@@ -1612,7 +1745,7 @@ export default function VideoDetailPage() {
                 className="flex-1"
               />
 
-              <div className="min-w-12 rounded-lg bg-slate-800 px-3 py-2 text-center text-xl font-black">
+              <div className="text-2xl font-black">
                 {eventScore}
               </div>
 
@@ -1620,153 +1753,187 @@ export default function VideoDetailPage() {
 
           </div>
 
-          <div className="md:col-span-2">
+          <div className="flex gap-5">
 
-            <label className="label">
-              Impacto del evento
-            </label>
-
-            <div className="flex flex-wrap gap-5">
-
-              <label>
-
-                <input
-                  type="radio"
-                  checked={
-                    positiveEvent ===
+            <label>
+              <input
+                type="radio"
+                checked={
+                  positiveEvent
+                }
+                onChange={() =>
+                  setPositiveEvent(
                     true
-                  }
-                  onChange={() =>
-                    setPositiveEvent(
-                      true
-                    )
-                  }
-                />{" "}
-                Positivo
-
-              </label>
-
-              <label>
-
-                <input
-                  type="radio"
-                  checked={
-                    positiveEvent ===
-                    false
-                  }
-                  onChange={() =>
-                    setPositiveEvent(
-                      false
-                    )
-                  }
-                />{" "}
-                Negativo
-
-              </label>
-
-            </div>
-
-          </div>
-
-          <div className="md:col-span-2">
-
-            <label className="label">
-              Comentario
+                  )
+                }
+              />{" "}
+              Positivo
             </label>
 
-            <textarea
-              className="input min-h-28"
-              name="comment"
-              placeholder="Lectura de la jugada, decisión del arquero, ejecución, contexto..."
-            />
+            <label>
+              <input
+                type="radio"
+                checked={
+                  !positiveEvent
+                }
+                onChange={() =>
+                  setPositiveEvent(
+                    false
+                  )
+                }
+              />{" "}
+              Negativo
+            </label>
 
           </div>
 
-        </div>
+          <input
+            className="input"
+            name="result"
+            placeholder="Resultado de la acción"
+          />
 
-        {message && (
-
-          <div className="mt-5 rounded-xl border border-red-800 bg-red-950/30 p-4">
-            {message}
-          </div>
-
-        )}
-
-        <div className="mt-6 flex justify-end">
+          <textarea
+            className="input min-h-24"
+            name="comment"
+            placeholder="Comentario técnico..."
+          />
 
           <button
-            type="submit"
             className="btn"
             disabled={
               savingEvent
             }
           >
             {savingEvent
-              ? "Guardando evento..."
-              : `+ Registrar evento en ${formatSeconds(
+              ? "Guardando..."
+              : `Registrar evento · ${formatSeconds(
                   timestamp
                 )}`}
           </button>
 
-        </div>
-
-      </form>
-
-      {/* RESUMEN */}
-
-      <section className="grid gap-4 md:grid-cols-3">
-
-        <InfoCard
-          label="Eventos positivos"
-          value={String(
-            positiveCount
-          )}
-        />
-
-        <InfoCard
-          label="Eventos negativos"
-          value={String(
-            negativeCount
-          )}
-        />
-
-        <InfoCard
-          label="Eventos validados"
-          value={String(
-            events.filter(
-              (
-                item
-              ) =>
-                item.validated
-            ).length
-          )}
-        />
+        </form>
 
       </section>
 
-      {/* EVENTOS */}
+      {/* PREEVALUACIÓN */}
 
       <section className="card">
 
-        <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex flex-wrap items-start justify-between gap-5">
 
           <div>
 
             <h2 className="text-xl font-black">
-              Eventos registrados
+              Preevaluación técnica derivada del video
             </h2>
 
             <p className="mt-1 text-sm text-slate-400">
-              Evidencia cronológica del análisis.
+              Solo se calculan variables con evidencia registrada y validada.
             </p>
 
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="btn"
+            onClick={
+              generateReportFromVideo
+            }
+            disabled={
+              metricsWithEvidence.length ===
+              0
+            }
+          >
+            Generar informe desde video
+          </button>
+
+        </div>
+
+        <div className="mt-6 grid gap-4 md:grid-cols-2">
+
+          {preEvaluation.map(
+            (
+              item
+            ) => (
+
+              <div
+                key={
+                  item.metric_id
+                }
+                className="rounded-xl border border-slate-800 p-4"
+              >
+
+                <div className="flex items-start justify-between gap-4">
+
+                  <div>
+
+                    <div className="font-bold">
+                      {item.label}
+                    </div>
+
+                    <div className="mt-1 text-xs text-slate-500">
+                      {item.events_count} eventos · Evidencia{" "}
+                      {evidenceLabel(
+                        item.evidence
+                      )}
+                    </div>
+
+                  </div>
+
+                  <div className="text-2xl font-black">
+                    {item.score !==
+                    null
+                      ? item.score.toFixed(
+                          2
+                        )
+                      : "—"}
+                  </div>
+
+                </div>
+
+                {item.events_count >
+                  0 && (
+
+                  <div className="mt-3 text-xs text-slate-500">
+
+                    Positivos:{" "}
+                    {
+                      item.positive_count
+                    }
+
+                    {" · "}
+
+                    Negativos:{" "}
+                    {
+                      item.negative_count
+                    }
+
+                  </div>
+
+                )}
+
+              </div>
+
+            )
+          )}
+
+        </div>
+
+      </section>
+
+      <section className="card">
+
+        <div className="flex justify-between gap-4">
+
+          <h2 className="text-xl font-black">
+            Eventos
+          </h2>
+
+          <div className="flex gap-2">
 
             <button
-              type="button"
-              className="rounded-lg border border-slate-600 px-4 py-2 text-sm"
+              className="rounded-lg border border-slate-600 px-4 py-2"
               onClick={
                 markReview
               }
@@ -1776,11 +1943,10 @@ export default function VideoDetailPage() {
                   0
               }
             >
-              Pasar a revisión
+              Revisión
             </button>
 
             <button
-              type="button"
               className="btn"
               onClick={
                 completeAnalysis
@@ -1791,25 +1957,25 @@ export default function VideoDetailPage() {
                   0
               }
             >
-              Completar análisis
+              Completar
             </button>
 
           </div>
 
         </div>
 
-        {events.length ===
-        0 ? (
+        <div className="mt-6 space-y-3">
 
-          <div className="mt-6 rounded-xl border border-slate-800 p-5 text-sm text-slate-500">
-            Todavía no hay eventos registrados.
-          </div>
+          {events.length ===
+          0 ? (
 
-        ) : (
+            <p className="text-sm text-slate-500">
+              Sin eventos registrados.
+            </p>
 
-          <div className="mt-6 space-y-3">
+          ) : (
 
-            {events.map(
+            events.map(
               (
                 item
               ) => (
@@ -1821,82 +1987,48 @@ export default function VideoDetailPage() {
                   className="rounded-xl border border-slate-800 p-4"
                 >
 
-                  <div className="flex flex-wrap items-start justify-between gap-5">
+                  <div className="flex justify-between gap-4">
 
-                    <div className="flex gap-4">
+                    <div>
 
-                      <div className="min-w-16 text-xl font-black">
+                      <div className="font-bold">
                         {formatSeconds(
                           item.timestamp_start_seconds
-                        )}
+                        )}{" "}
+                        ·{" "}
+                        {item.event_subtype ||
+                          item.event_type}
                       </div>
 
-                      <div>
-
-                        <div className="font-bold">
-                          {item.event_subtype ||
-                            item.event_type ||
-                            "Evento"}
-                        </div>
-
-                        <div className="mt-1 text-xs text-slate-500">
-                          {item.event_category ||
-                            "Sin categoría"}
-
-                          {item.evaluation_metrics
-                            ?.label &&
-                            ` · ${item.evaluation_metrics.label}`}
-                        </div>
-
-                        {item.result && (
-
-                          <div className="mt-2 text-sm text-slate-300">
-                            {item.result}
-                          </div>
-
-                        )}
-
-                        {item.comment && (
-
-                          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-                            {item.comment}
-                          </p>
-
-                        )}
-
+                      <div className="mt-1 text-sm text-slate-400">
+                        {item.evaluation_metrics
+                          ?.label ||
+                          "Sin métrica"}
                       </div>
+
+                      {item.comment && (
+
+                        <p className="mt-2 text-sm text-slate-300">
+                          {item.comment}
+                        </p>
+
+                      )}
 
                     </div>
 
-                    <div className="flex items-start gap-5">
+                    <div className="text-right">
 
-                      <div className="text-right">
-
-                        <div className="text-xs text-slate-500">
-                          Score
-                        </div>
-
-                        <div className="text-2xl font-black">
-                          {item.event_score ??
-                            "—"}
-                        </div>
-
-                        <div className="mt-1 text-xs text-slate-500">
-                          {item.positive_event
-                            ? "Positivo"
-                            : "Negativo"}
-                        </div>
-
+                      <div className="text-xl font-black">
+                        {item.event_score}
                       </div>
 
                       <button
-                        type="button"
                         onClick={() =>
                           deleteEvent(
                             item.id
                           )
                         }
-                        className="rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-400"
+                        className="mt-2 text-xs text-slate-500"
                       >
                         Eliminar
                       </button>
@@ -1910,33 +2042,9 @@ export default function VideoDetailPage() {
               )
             )}
 
-          </div>
-
-        )}
+        </div>
 
       </section>
-
-      <div className="flex justify-between gap-3 pb-10">
-
-        <a
-          href="/videos"
-          className="rounded-lg border border-slate-600 px-5 py-3"
-        >
-          ← Biblioteca
-        </a>
-
-        {video.player_id && (
-
-          <a
-            href={`/players/${video.player_id}`}
-            className="btn"
-          >
-            Ver ficha del arquero
-          </a>
-
-        )}
-
-      </div>
 
     </div>
   );
