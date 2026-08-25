@@ -90,6 +90,8 @@ export default function VideosPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
 
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
   useEffect(() => {
     loadVideos();
   }, []);
@@ -147,6 +149,54 @@ export default function VideosPage() {
     setLoading(false);
   }
 
+  async function deleteVideo(video: VideoRow) {
+    const playerName =
+      video.players?.full_name || "Jugador sin asociar";
+
+    const videoName =
+      video.title || matchLabel(video) || "Video sin título";
+
+    const confirmed = window.confirm(
+      `¿Eliminar este video?\n\n` +
+        `${videoName}\n` +
+        `Arquero: ${playerName}\n\n` +
+        `Esta acción no se puede deshacer.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingId(video.id);
+    setMessage("");
+
+    try {
+      const { error } = await supabase
+        .from("videos")
+        .delete()
+        .eq("id", video.id);
+
+      if (error) {
+        throw error;
+      }
+
+      setVideos((currentVideos) =>
+        currentVideos.filter(
+          (currentVideo) => currentVideo.id !== video.id
+        )
+      );
+    } catch (error: any) {
+      console.error("Error eliminando video:", error);
+
+      setMessage(
+        error?.message ||
+          "No se pudo eliminar el video."
+      );
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   const filteredVideos = useMemo(() => {
     const term = search.trim().toLowerCase();
 
@@ -177,7 +227,10 @@ export default function VideosPage() {
     });
   }, [videos, search, statusFilter]);
 
-  if (message && !loading) {
+  if (
+    message === "Necesitás iniciar sesión." &&
+    !loading
+  ) {
     return (
       <div className="space-y-6">
         <div>
@@ -226,6 +279,24 @@ export default function VideosPage() {
           + Nuevo video
         </a>
       </div>
+
+      {message && (
+        <div className="rounded-xl border border-red-900/50 bg-red-950/20 p-4">
+          <div className="flex items-start justify-between gap-4">
+            <p className="text-sm text-red-300">
+              {message}
+            </p>
+
+            <button
+              type="button"
+              onClick={() => setMessage("")}
+              className="text-sm text-slate-400 hover:text-white"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      )}
 
       <section className="card">
         <div className="grid gap-4 md:grid-cols-[1fr_240px]">
@@ -350,10 +421,9 @@ export default function VideosPage() {
       ) : (
         <section className="grid gap-4 lg:grid-cols-2">
           {filteredVideos.map((video) => (
-            <a
+            <article
               key={video.id}
-              href={`/videos/${video.id}`}
-              className="card block transition hover:border-slate-600 hover:bg-slate-900/60"
+              className="card transition hover:border-slate-600 hover:bg-slate-900/60"
             >
               <div className="flex items-start justify-between gap-5">
                 <div className="min-w-0">
@@ -396,7 +466,8 @@ export default function VideosPage() {
 
                 {video.goalkeeper_team && (
                   <div className="mt-1 text-xs text-slate-500">
-                    Equipo del arquero: {video.goalkeeper_team}
+                    Equipo del arquero:{" "}
+                    {video.goalkeeper_team}
                   </div>
                 )}
               </div>
@@ -425,7 +496,27 @@ export default function VideosPage() {
                   }
                 />
               </div>
-            </a>
+
+              <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-4">
+                <a
+                  href={`/videos/${video.id}`}
+                  className="btn"
+                >
+                  Ver análisis
+                </a>
+
+                <button
+                  type="button"
+                  disabled={deletingId === video.id}
+                  onClick={() => deleteVideo(video)}
+                  className="rounded-lg border border-red-900/70 px-4 py-2 text-sm font-bold text-red-300 transition hover:border-red-700 hover:bg-red-950/30 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {deletingId === video.id
+                    ? "Eliminando..."
+                    : "Eliminar"}
+                </button>
+              </div>
+            </article>
           ))}
         </section>
       )}
