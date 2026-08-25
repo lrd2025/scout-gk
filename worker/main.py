@@ -418,7 +418,12 @@ def process_job(job: dict):
     print(f"Título: {video.get('title')}")
     print(f"Fuente: {video.get('provider')}")
     print(f"Equipo GK: {target.get('team_name')}")
-    print(f"Lado: {target.get('goalkeeper_side')}")
+    print(f"Dorsal: {target.get('shirt_number')}")
+    print(f"Color camiseta: {target.get('shirt_color')}")
+    print(f"Lado equipo: {target.get('goalkeeper_side')}")
+    print(f"Arco inicial: {target.get('starting_goal_side')}")
+    print(f"Seguimiento desde: {target.get('active_from_seconds')} s")
+    print(f"Seguimiento hasta: {target.get('active_to_seconds')} s")
 
     update_target(
         target["id"],
