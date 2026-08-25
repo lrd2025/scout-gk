@@ -108,6 +108,7 @@ type MetricEvidence =
 
 type MetricPreEvaluation = {
   metric_id: string;
+
   code: string;
   label: string;
   group_name: string;
@@ -119,6 +120,14 @@ type MetricPreEvaluation = {
   negative_count: number;
 
   evidence: MetricEvidence;
+};
+
+type AutomaticJob = {
+  id: string;
+  status: string | null;
+  progress: number | null;
+  analysis_engine: string | null;
+  model_version: string | null;
 };
 
 type YTPlayer = {
@@ -154,7 +163,6 @@ type YTNamespace = {
 declare global {
   interface Window {
     YT?: YTNamespace;
-
     onYouTubeIframeAPIReady?: () => void;
   }
 }
@@ -251,7 +259,10 @@ function statusLabel(
       return "Error";
 
     default:
-      return value || "Sin estado";
+      return (
+        value ||
+        "Sin estado"
+      );
   }
 }
 
@@ -381,6 +392,26 @@ export default function VideoDetailPage() {
   ] =
     useState(0);
 
+  const [
+    startingAutomaticAnalysis,
+    setStartingAutomaticAnalysis,
+  ] =
+    useState(false);
+
+  const [
+    automaticAnalysisMessage,
+    setAutomaticAnalysisMessage,
+  ] =
+    useState("");
+
+  const [
+    automaticJob,
+    setAutomaticJob,
+  ] =
+    useState<AutomaticJob | null>(
+      null
+    );
+
   const playerContainerRef =
     useRef<HTMLDivElement | null>(
       null
@@ -392,7 +423,7 @@ export default function VideoDetailPage() {
     );
 
   /* =======================================================
-     CARGA DE DATOS
+     CARGA INICIAL
   ======================================================= */
 
   useEffect(() => {
@@ -407,16 +438,12 @@ export default function VideoDetailPage() {
     if (
       !video ||
       !video.external_video_id ||
-      video.provider !== "YouTube"
+      video.provider !==
+        "YouTube"
     ) {
       return;
     }
 
-    /*
-     * IMPORTANTE:
-     * capturamos el ID una vez que ya comprobamos
-     * que no es null. Esto evita el error de TypeScript.
-     */
     const videoId =
       video.external_video_id;
 
@@ -460,7 +487,8 @@ export default function VideoDetailPage() {
                 );
 
                 const total =
-                  youtubePlayerRef.current
+                  youtubePlayerRef
+                    .current
                     ?.getDuration() ??
                   0;
 
@@ -533,7 +561,12 @@ export default function VideoDetailPage() {
 
   async function loadData() {
     setLoading(true);
+
     setMessage("");
+
+    setAutomaticAnalysisMessage(
+      ""
+    );
 
     const {
       data: authData,
@@ -557,6 +590,7 @@ export default function VideoDetailPage() {
       eventTypesResponse,
       metricsResponse,
       eventsResponse,
+      jobsResponse,
     ] =
       await Promise.all([
         supabase
@@ -681,13 +715,37 @@ export default function VideoDetailPage() {
               ascending: true,
             }
           ),
+
+        supabase
+          .from(
+            "video_analysis_jobs"
+          )
+          .select(`
+            id,
+            status,
+            progress,
+            analysis_engine,
+            model_version
+          `)
+          .eq(
+            "video_id",
+            params.id
+          )
+          .order(
+            "created_at",
+            {
+              ascending: false,
+            }
+          )
+          .limit(1),
       ]);
 
     if (
       videoResponse.error
     ) {
       setMessage(
-        videoResponse.error.message
+        videoResponse.error
+          .message
       );
 
       setLoading(false);
@@ -698,24 +756,32 @@ export default function VideoDetailPage() {
     if (
       eventTypesResponse.error
     ) {
-      setMessage(
-        eventTypesResponse.error.message
+      console.error(
+        eventTypesResponse.error
       );
     }
 
     if (
       metricsResponse.error
     ) {
-      setMessage(
-        metricsResponse.error.message
+      console.error(
+        metricsResponse.error
       );
     }
 
     if (
       eventsResponse.error
     ) {
-      setMessage(
-        eventsResponse.error.message
+      console.error(
+        eventsResponse.error
+      );
+    }
+
+    if (
+      jobsResponse.error
+    ) {
+      console.error(
+        jobsResponse.error
       );
     }
 
@@ -749,6 +815,24 @@ export default function VideoDetailPage() {
         []
       ) as unknown as VideoEvent[]
     );
+
+    const latestJob =
+      (
+        jobsResponse.data ||
+        []
+      )[0];
+
+    if (
+      latestJob
+    ) {
+      setAutomaticJob(
+        latestJob as AutomaticJob
+      );
+    } else {
+      setAutomaticJob(
+        null
+      );
+    }
 
     if (
       loadedEventTypes.length >
@@ -785,7 +869,7 @@ export default function VideoDetailPage() {
   }
 
   /* =======================================================
-     EVENT TYPE
+     TIPO DE EVENTO
   ======================================================= */
 
   function handleEventTypeChange(
@@ -831,7 +915,7 @@ export default function VideoDetailPage() {
   }
 
   /* =======================================================
-     CONTROLES VIDEO
+     VIDEO
   ======================================================= */
 
   function captureCurrentTime() {
@@ -929,7 +1013,346 @@ export default function VideoDetailPage() {
   }
 
   /* =======================================================
-     GUARDAR EVENTO
+     ANÁLISIS AUTOMÁTICO
+  ======================================================= */
+
+  async function startAutomaticAnalysis() {
+    if (
+      !video
+    ) {
+      setAutomaticAnalysisMessage(
+        "No se encontró la información del video."
+      );
+
+      return;
+    }
+
+    if (
+      !video.player_id
+    ) {
+      setAutomaticAnalysisMessage(
+        "Este video no tiene un arquero asociado."
+      );
+
+      return;
+    }
+
+    const currentVideo =
+      video;
+
+    const playerId =
+      currentVideo.player_id;
+
+    setStartingAutomaticAnalysis(
+      true
+    );
+
+    setAutomaticAnalysisMessage(
+      ""
+    );
+
+    try {
+      let goalkeeperSide:
+        | "HOME"
+        | "AWAY"
+        | "UNKNOWN" =
+        "UNKNOWN";
+
+      const goalkeeperTeam =
+        currentVideo.goalkeeper_team
+          ?.trim()
+          .toLowerCase();
+
+      const homeTeam =
+        currentVideo.home_team
+          ?.trim()
+          .toLowerCase();
+
+      const awayTeam =
+        currentVideo.away_team
+          ?.trim()
+          .toLowerCase();
+
+      if (
+        goalkeeperTeam &&
+        homeTeam &&
+        goalkeeperTeam ===
+          homeTeam
+      ) {
+        goalkeeperSide =
+          "HOME";
+      }
+
+      if (
+        goalkeeperTeam &&
+        awayTeam &&
+        goalkeeperTeam ===
+          awayTeam
+      ) {
+        goalkeeperSide =
+          "AWAY";
+      }
+
+      /* -----------------------------------------------
+         1. CONFIGURAR ARQUERO OBJETIVO
+      ----------------------------------------------- */
+
+      const {
+        error:
+          targetError,
+      } =
+        await supabase
+          .from(
+            "video_goalkeeper_targets"
+          )
+          .upsert(
+            {
+              video_id:
+                currentVideo.id,
+
+              player_id:
+                playerId,
+
+              team_name:
+                currentVideo.goalkeeper_team ||
+                null,
+
+              goalkeeper_side:
+                goalkeeperSide,
+
+              initial_timestamp_seconds:
+                0,
+
+              identification_status:
+                "CONFIGURED",
+
+              updated_at:
+                new Date()
+                  .toISOString(),
+            },
+            {
+              onConflict:
+                "video_id,player_id",
+            }
+          );
+
+      if (
+        targetError
+      ) {
+        throw targetError;
+      }
+
+      /* -----------------------------------------------
+         2. EVITAR JOB DUPLICADO
+      ----------------------------------------------- */
+
+      const {
+        data:
+          existingJobs,
+        error:
+          existingJobError,
+      } =
+        await supabase
+          .from(
+            "video_analysis_jobs"
+          )
+          .select(`
+            id,
+            status,
+            progress,
+            analysis_engine,
+            model_version
+          `)
+          .eq(
+            "video_id",
+            currentVideo.id
+          )
+          .eq(
+            "player_id",
+            playerId
+          )
+          .in(
+            "status",
+            [
+              "PENDING",
+              "PROCESSING",
+            ]
+          )
+          .limit(1);
+
+      if (
+        existingJobError
+      ) {
+        throw existingJobError;
+      }
+
+      if (
+        existingJobs &&
+        existingJobs.length >
+          0
+      ) {
+        const existing =
+          existingJobs[0] as AutomaticJob;
+
+        setAutomaticJob(
+          existing
+        );
+
+        setAutomaticAnalysisMessage(
+          `Ya existe un trabajo ${statusLabel(
+            existing.status
+          ).toLowerCase()} para este video.`
+        );
+
+        return;
+      }
+
+      /* -----------------------------------------------
+         3. CREAR JOB
+      ----------------------------------------------- */
+
+      const {
+        data:
+          createdJob,
+        error:
+          jobError,
+      } =
+        await supabase
+          .from(
+            "video_analysis_jobs"
+          )
+          .insert({
+            video_id:
+              currentVideo.id,
+
+            player_id:
+              playerId,
+
+            status:
+              "PENDING",
+
+            progress:
+              0,
+
+            analysis_type:
+              "GOALKEEPER_AUTO",
+
+            source_type:
+              "VIDEO",
+
+            analysis_engine:
+              "SCOUT_GK_VISION",
+
+            model_version:
+              "0.2.0",
+
+            candidate_events:
+              0,
+
+            accepted_events:
+              0,
+
+            rejected_events:
+              0,
+
+            updated_at:
+              new Date()
+                .toISOString(),
+          })
+          .select(`
+            id,
+            status,
+            progress,
+            analysis_engine,
+            model_version
+          `)
+          .single();
+
+      if (
+        jobError
+      ) {
+        throw jobError;
+      }
+
+      const newJob =
+        createdJob as AutomaticJob;
+
+      /* -----------------------------------------------
+         4. ACTUALIZAR VIDEO
+      ----------------------------------------------- */
+
+      const {
+        error:
+          videoUpdateError,
+      } =
+        await supabase
+          .from(
+            "videos"
+          )
+          .update({
+            analysis_status:
+              "PENDING",
+
+            processing_progress:
+              0,
+
+            updated_at:
+              new Date()
+                .toISOString(),
+          })
+          .eq(
+            "id",
+            currentVideo.id
+          );
+
+      if (
+        videoUpdateError
+      ) {
+        throw videoUpdateError;
+      }
+
+      setAutomaticJob(
+        newJob
+      );
+
+      setVideo({
+        ...currentVideo,
+
+        analysis_status:
+          "PENDING",
+
+        processing_progress:
+          0,
+      });
+
+      setAutomaticAnalysisMessage(
+        `Trabajo creado correctamente. Job ${newJob.id.slice(
+          0,
+          8
+        )}… pendiente de procesamiento.`
+      );
+    } catch (
+      error: unknown
+    ) {
+      console.error(
+        "Automatic analysis:",
+        error
+      );
+
+      setAutomaticAnalysisMessage(
+        error instanceof Error
+          ? error.message
+          : "No se pudo iniciar el análisis automático."
+      );
+    } finally {
+      setStartingAutomaticAnalysis(
+        false
+      );
+    }
+  }
+
+  /* =======================================================
+     GUARDAR EVENTO MANUAL
   ======================================================= */
 
   async function handleSaveEvent(
@@ -947,6 +1370,9 @@ export default function VideoDetailPage() {
 
       return;
     }
+
+    const currentVideo =
+      video;
 
     const eventType =
       eventTypes.find(
@@ -998,10 +1424,10 @@ export default function VideoDetailPage() {
     try {
       const payload = {
         video_id:
-          video.id,
+          currentVideo.id,
 
         player_id:
-          video.player_id,
+          currentVideo.player_id,
 
         metric_id:
           selectedMetricId ||
@@ -1141,8 +1567,6 @@ export default function VideoDetailPage() {
       setEventScore(
         5
       );
-
-      event.currentTarget.reset();
     } catch (
       error: unknown
     ) {
@@ -1163,7 +1587,7 @@ export default function VideoDetailPage() {
   }
 
   /* =======================================================
-     ACTUALIZAR ESTADO
+     ESTADO ANÁLISIS MANUAL
   ======================================================= */
 
   async function updateAnalysisState(
@@ -1226,43 +1650,6 @@ export default function VideoDetailPage() {
     ) {
       console.error(
         videoUpdateError
-      );
-    }
-
-    const {
-      error:
-        jobUpdateError,
-    } =
-      await supabase
-        .from(
-          "video_analysis_jobs"
-        )
-        .update({
-          status:
-            eventsCount >
-            0
-              ? "PROCESSING"
-              : "PENDING",
-
-          progress,
-
-          events_detected:
-            eventsCount,
-
-          updated_at:
-            new Date()
-              .toISOString(),
-        })
-        .eq(
-          "video_id",
-          currentVideo.id
-        );
-
-    if (
-      jobUpdateError
-    ) {
-      console.error(
-        jobUpdateError
       );
     }
 
@@ -1330,41 +1717,6 @@ export default function VideoDetailPage() {
         error
       ) {
         throw error;
-      }
-
-      const {
-        error:
-          jobError,
-      } =
-        await supabase
-          .from(
-            "video_analysis_jobs"
-          )
-          .update({
-            status:
-              "REVIEW",
-
-            progress:
-              95,
-
-            events_detected:
-              events.length,
-
-            updated_at:
-              new Date()
-                .toISOString(),
-          })
-          .eq(
-            "video_id",
-            currentVideo.id
-          );
-
-      if (
-        jobError
-      ) {
-        console.error(
-          jobError
-        );
       }
 
       setVideo({
@@ -1440,45 +1792,6 @@ export default function VideoDetailPage() {
         error
       ) {
         throw error;
-      }
-
-      const {
-        error:
-          jobError,
-      } =
-        await supabase
-          .from(
-            "video_analysis_jobs"
-          )
-          .update({
-            status:
-              "COMPLETED",
-
-            progress:
-              100,
-
-            events_detected:
-              events.length,
-
-            finished_at:
-              new Date()
-                .toISOString(),
-
-            updated_at:
-              new Date()
-                .toISOString(),
-          })
-          .eq(
-            "video_id",
-            currentVideo.id
-          );
-
-      if (
-        jobError
-      ) {
-        console.error(
-          jobError
-        );
       }
 
       setVideo({
@@ -1862,7 +2175,7 @@ export default function VideoDetailPage() {
   }
 
   /* =======================================================
-     DATOS DERIVADOS
+     DERIVADOS
   ======================================================= */
 
   const positiveCount =
@@ -1893,7 +2206,7 @@ export default function VideoDetailPage() {
     ).length;
 
   /* =======================================================
-     LOADING / ERROR
+     LOADING
   ======================================================= */
 
   if (
@@ -1946,7 +2259,9 @@ export default function VideoDetailPage() {
   return (
     <div className="space-y-8">
 
-      {/* CABECERA */}
+      {/* ===================================================
+          CABECERA
+      =================================================== */}
 
       <section className="card">
 
@@ -1970,16 +2285,22 @@ export default function VideoDetailPage() {
             </p>
 
             <p className="mt-1 text-sm text-slate-500">
+
               {formatMatchDate(
                 video.match_date
               )}
+
               {" · "}
+
               {matchLabel(
                 video
               )}
+
               {" · "}
+
               {video.competition_name ||
                 "Competencia sin registrar"}
+
             </p>
 
           </div>
@@ -1991,15 +2312,19 @@ export default function VideoDetailPage() {
             </div>
 
             <div className="mt-1 font-black">
+
               {statusLabel(
                 video.analysis_status
               )}
+
             </div>
 
             <div className="mt-1 text-xs text-slate-500">
+
               {video.processing_progress ??
                 0}
               %
+
             </div>
 
           </div>
@@ -2008,7 +2333,9 @@ export default function VideoDetailPage() {
 
       </section>
 
-      {/* INDICADORES */}
+      {/* ===================================================
+          INDICADORES
+      =================================================== */}
 
       <section className="grid gap-4 md:grid-cols-4">
 
@@ -2047,7 +2374,9 @@ export default function VideoDetailPage() {
 
       </section>
 
-      {/* VIDEO */}
+      {/* ===================================================
+          VIDEO
+      =================================================== */}
 
       <section className="card">
 
@@ -2060,9 +2389,12 @@ export default function VideoDetailPage() {
             </h2>
 
             <p className="mt-1 text-sm text-slate-400">
+
               Fuente:{" "}
+
               {video.provider ||
                 "Externa"}
+
             </p>
 
           </div>
@@ -2082,6 +2414,7 @@ export default function VideoDetailPage() {
 
         {isYouTube ? (
           <>
+
             <div className="mt-6 aspect-video overflow-hidden rounded-xl border border-slate-800 bg-black">
 
               <div
@@ -2154,16 +2487,264 @@ export default function VideoDetailPage() {
               </div>
 
             </div>
+
           </>
         ) : (
+
           <div className="mt-6 rounded-xl border border-slate-800 bg-slate-950/30 p-5 text-sm text-slate-400">
-            Esta fuente no permite sincronización automática. Abrila en otra pestaña y cargá el timestamp manualmente.
+
+            Esta fuente no permite sincronización automática.
+            Abrila en otra pestaña y cargá el timestamp manualmente.
+
           </div>
+
         )}
 
       </section>
 
-      {/* EVENTO */}
+      {/* ===================================================
+          ANÁLISIS AUTOMÁTICO
+      =================================================== */}
+
+      <section className="card">
+
+        <div className="flex flex-wrap items-start justify-between gap-5">
+
+          <div>
+
+            <div className="text-sm text-sky-300">
+              Inteligencia audiovisual
+            </div>
+
+            <h2 className="mt-1 text-xl font-black">
+              Análisis automático del arquero
+            </h2>
+
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
+
+              Scout GK analizará exclusivamente al arquero
+              asociado a este video y generará acciones
+              candidatas para revisión humana.
+
+            </p>
+
+          </div>
+
+          <div className="text-right">
+
+            <div className="text-xs text-slate-500">
+              Estado
+            </div>
+
+            <div className="mt-1 font-black">
+
+              {statusLabel(
+                automaticJob?.status ||
+                  video.analysis_status
+              )}
+
+            </div>
+
+            <div className="mt-1 text-xs text-slate-500">
+
+              {automaticJob?.progress ??
+                video.processing_progress ??
+                0}
+              %
+
+            </div>
+
+          </div>
+
+        </div>
+
+        <div className="mt-6 grid gap-4 md:grid-cols-3">
+
+          <div className="rounded-xl border border-slate-800 p-4">
+
+            <div className="text-xs text-slate-500">
+              Arquero objetivo
+            </div>
+
+            <div className="mt-2 font-bold">
+
+              {video.players
+                ?.full_name ||
+                "Sin arquero asociado"}
+
+            </div>
+
+          </div>
+
+          <div className="rounded-xl border border-slate-800 p-4">
+
+            <div className="text-xs text-slate-500">
+              Equipo
+            </div>
+
+            <div className="mt-2 font-bold">
+
+              {video.goalkeeper_team ||
+                "Sin definir"}
+
+            </div>
+
+          </div>
+
+          <div className="rounded-xl border border-slate-800 p-4">
+
+            <div className="text-xs text-slate-500">
+              Motor
+            </div>
+
+            <div className="mt-2 font-bold">
+              SCOUT GK Vision
+            </div>
+
+            <div className="mt-1 text-xs text-slate-500">
+
+              {automaticJob?.model_version ||
+                "v0.2.0"}
+
+            </div>
+
+          </div>
+
+        </div>
+
+        <div className="mt-6 rounded-xl border border-slate-800 bg-slate-950/20 p-4">
+
+          <div className="font-bold">
+            Flujo automático
+          </div>
+
+          <div className="mt-3 text-sm leading-7 text-slate-400">
+
+            Identificar arquero
+            {" → "}
+            realizar seguimiento
+            {" → "}
+            detectar acciones
+            {" → "}
+            generar candidatos
+            {" → "}
+            revisión del scout
+            {" → "}
+            incorporar eventos validados.
+
+          </div>
+
+        </div>
+
+        {automaticJob && (
+
+          <div className="mt-5 rounded-xl border border-slate-800 p-4">
+
+            <div className="grid gap-4 md:grid-cols-3">
+
+              <div>
+
+                <div className="text-xs text-slate-500">
+                  Job
+                </div>
+
+                <div className="mt-1 font-mono text-sm">
+                  {automaticJob.id.slice(
+                    0,
+                    12
+                  )}
+                  …
+                </div>
+
+              </div>
+
+              <div>
+
+                <div className="text-xs text-slate-500">
+                  Estado
+                </div>
+
+                <div className="mt-1 font-bold">
+                  {statusLabel(
+                    automaticJob.status
+                  )}
+                </div>
+
+              </div>
+
+              <div>
+
+                <div className="text-xs text-slate-500">
+                  Progreso
+                </div>
+
+                <div className="mt-1 font-bold">
+
+                  {automaticJob.progress ??
+                    0}
+                  %
+
+                </div>
+
+              </div>
+
+            </div>
+
+          </div>
+
+        )}
+
+        {automaticAnalysisMessage && (
+
+          <div className="mt-5 rounded-xl border border-slate-700 p-4 text-sm">
+
+            {automaticAnalysisMessage}
+
+          </div>
+
+        )}
+
+        <div className="mt-6 flex flex-wrap justify-end gap-3">
+
+          <button
+            type="button"
+            className="rounded-lg border border-slate-600 px-4 py-3 text-sm"
+            onClick={() =>
+              loadData()
+            }
+          >
+            Actualizar estado
+          </button>
+
+          <button
+            type="button"
+            className="btn"
+            onClick={
+              startAutomaticAnalysis
+            }
+            disabled={
+              startingAutomaticAnalysis ||
+              !video.player_id ||
+              automaticJob?.status ===
+                "PENDING" ||
+              automaticJob?.status ===
+                "PROCESSING"
+            }
+          >
+
+            {startingAutomaticAnalysis
+              ? "Preparando análisis..."
+              : "⚡ Analizar automáticamente"}
+
+          </button>
+
+        </div>
+
+      </section>
+
+      {/* ===================================================
+          REGISTRAR EVENTO MANUAL
+      =================================================== */}
 
       <section className="card">
 
@@ -2172,7 +2753,10 @@ export default function VideoDetailPage() {
         </h2>
 
         <p className="mt-1 text-sm text-slate-400">
-          El tiempo se captura directamente desde el reproductor cuando está disponible.
+
+          El tiempo se captura directamente desde el
+          reproductor cuando está disponible.
+
         </p>
 
         <form
@@ -2199,16 +2783,20 @@ export default function VideoDetailPage() {
                   event
                 ) =>
                   handleEventTypeChange(
-                    event.target
-                      .value
+                    event.target.value
                   )
                 }
               >
+
+                <option value="">
+                  Seleccionar tipo de evento...
+                </option>
 
                 {eventTypes.map(
                   (
                     item
                   ) => (
+
                     <option
                       key={
                         item.id
@@ -2219,6 +2807,7 @@ export default function VideoDetailPage() {
                     >
                       {item.label}
                     </option>
+
                   )
                 )}
 
@@ -2241,8 +2830,7 @@ export default function VideoDetailPage() {
                   event
                 ) =>
                   setSelectedMetricId(
-                    event.target
-                      .value
+                    event.target.value
                   )
                 }
               >
@@ -2255,6 +2843,7 @@ export default function VideoDetailPage() {
                   (
                     metric
                   ) => (
+
                     <option
                       key={
                         metric.id
@@ -2265,6 +2854,7 @@ export default function VideoDetailPage() {
                     >
                       {metric.label}
                     </option>
+
                   )
                 )}
 
@@ -2273,8 +2863,6 @@ export default function VideoDetailPage() {
             </div>
 
           </div>
-
-          {/* TIMESTAMP */}
 
           <div>
 
@@ -2296,24 +2884,23 @@ export default function VideoDetailPage() {
                 ) =>
                   setTimestamp(
                     Number(
-                      event.target
-                        .value
+                      event.target.value
                     )
                   )
                 }
               />
 
               <div className="rounded-lg bg-slate-950/40 p-3 text-center text-xl font-black">
+
                 {formatSeconds(
                   timestamp
                 )}
+
               </div>
 
             </div>
 
           </div>
-
-          {/* SCORE */}
 
           <div>
 
@@ -2336,8 +2923,7 @@ export default function VideoDetailPage() {
                 ) =>
                   setEventScore(
                     Number(
-                      event.target
-                        .value
+                      event.target.value
                     )
                   )
                 }
@@ -2345,14 +2931,14 @@ export default function VideoDetailPage() {
               />
 
               <div className="min-w-14 rounded-lg bg-slate-800 px-3 py-2 text-center text-xl font-black">
+
                 {eventScore}
+
               </div>
 
             </div>
 
           </div>
-
-          {/* IMPACTO */}
 
           <div>
 
@@ -2404,8 +2990,6 @@ export default function VideoDetailPage() {
 
           </div>
 
-          {/* RESULTADO */}
-
           <div>
 
             <label className="label">
@@ -2419,8 +3003,6 @@ export default function VideoDetailPage() {
             />
 
           </div>
-
-          {/* COMENTARIO */}
 
           <div>
 
@@ -2437,9 +3019,13 @@ export default function VideoDetailPage() {
           </div>
 
           {message && (
+
             <div className="rounded-xl border border-red-800 bg-red-950/30 p-4 text-sm">
+
               {message}
+
             </div>
+
           )}
 
           <div className="flex justify-end">
@@ -2448,14 +3034,17 @@ export default function VideoDetailPage() {
               type="submit"
               className="btn"
               disabled={
-                savingEvent
+                savingEvent ||
+                !selectedEventType
               }
             >
+
               {savingEvent
                 ? "Guardando..."
                 : `+ Registrar evento · ${formatSeconds(
                     timestamp
                   )}`}
+
             </button>
 
           </div>
@@ -2464,7 +3053,9 @@ export default function VideoDetailPage() {
 
       </section>
 
-      {/* PREEVALUACIÓN */}
+      {/* ===================================================
+          PREEVALUACIÓN
+      =================================================== */}
 
       <section className="card">
 
@@ -2477,7 +3068,10 @@ export default function VideoDetailPage() {
             </h2>
 
             <p className="mt-1 text-sm text-slate-400">
-              Las métricas sin evidencia permanecen sin puntuación.
+
+              Las métricas sin evidencia permanecen
+              sin puntuación.
+
             </p>
 
           </div>
@@ -2504,6 +3098,7 @@ export default function VideoDetailPage() {
             (
               item
             ) => (
+
               <div
                 key={
                   item.metric_id
@@ -2520,33 +3115,42 @@ export default function VideoDetailPage() {
                     </div>
 
                     <div className="mt-1 text-xs text-slate-500">
+
                       {item.events_count} evento
+
                       {item.events_count ===
                       1
                         ? ""
                         : "s"}
+
                       {" · "}
+
                       Evidencia{" "}
+
                       {evidenceLabel(
                         item.evidence
                       )}
+
                     </div>
 
                   </div>
 
                   <div className="text-2xl font-black">
+
                     {item.score !==
                     null
                       ? item.score.toFixed(
                           2
                         )
                       : "—"}
+
                   </div>
 
                 </div>
 
                 {item.events_count >
                   0 && (
+
                   <div className="mt-4 text-xs text-slate-500">
 
                     Positivos:{" "}
@@ -2562,9 +3166,11 @@ export default function VideoDetailPage() {
                     }
 
                   </div>
+
                 )}
 
               </div>
+
             )
           )}
 
@@ -2572,7 +3178,9 @@ export default function VideoDetailPage() {
 
       </section>
 
-      {/* CONTADORES */}
+      {/* ===================================================
+          CONTADORES
+      =================================================== */}
 
       <section className="grid gap-4 md:grid-cols-3">
 
@@ -2599,7 +3207,9 @@ export default function VideoDetailPage() {
 
       </section>
 
-      {/* CRONOLOGÍA */}
+      {/* ===================================================
+          CRONOLOGÍA
+      =================================================== */}
 
       <section className="card">
 
@@ -2612,7 +3222,9 @@ export default function VideoDetailPage() {
             </h2>
 
             <p className="mt-1 text-sm text-slate-400">
+
               Hacé clic sobre el tiempo para volver a esa acción.
+
             </p>
 
           </div>
@@ -2655,16 +3267,22 @@ export default function VideoDetailPage() {
 
         {events.length ===
         0 ? (
+
           <div className="mt-6 rounded-xl border border-slate-800 p-5 text-sm text-slate-500">
+
             Todavía no hay eventos registrados.
+
           </div>
+
         ) : (
+
           <div className="mt-6 space-y-3">
 
             {events.map(
               (
                 item
               ) => (
+
                 <div
                   key={
                     item.id
@@ -2685,20 +3303,25 @@ export default function VideoDetailPage() {
                         }
                         className="min-w-16 text-left text-xl font-black hover:text-sky-300"
                       >
+
                         {formatSeconds(
                           item.timestamp_start_seconds
                         )}
+
                       </button>
 
                       <div>
 
                         <div className="font-bold">
+
                           {item.event_subtype ||
                             item.event_type ||
                             "Evento"}
+
                         </div>
 
                         <div className="mt-1 text-xs text-slate-500">
+
                           {item.event_category ||
                             "Sin categoría"}
 
@@ -2706,18 +3329,27 @@ export default function VideoDetailPage() {
                             ?.label
                             ? ` · ${item.evaluation_metrics.label}`
                             : ""}
+
                         </div>
 
                         {item.result && (
+
                           <div className="mt-2 text-sm text-slate-300">
+
                             {item.result}
+
                           </div>
+
                         )}
 
                         {item.comment && (
+
                           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+
                             {item.comment}
+
                           </p>
+
                         )}
 
                       </div>
@@ -2733,8 +3365,10 @@ export default function VideoDetailPage() {
                         </div>
 
                         <div className="text-2xl font-black">
+
                           {item.event_score ??
                             "—"}
+
                         </div>
 
                         <div className="mt-1 text-xs text-slate-500">
@@ -2768,15 +3402,19 @@ export default function VideoDetailPage() {
                   </div>
 
                 </div>
+
               )
             )}
 
           </div>
+
         )}
 
       </section>
 
-      {/* NAVEGACIÓN */}
+      {/* ===================================================
+          NAVEGACIÓN
+      =================================================== */}
 
       <div className="flex flex-wrap justify-between gap-3 pb-10">
 
@@ -2788,12 +3426,14 @@ export default function VideoDetailPage() {
         </a>
 
         {video.player_id && (
+
           <a
             href={`/players/${video.player_id}`}
             className="btn"
           >
             Ver ficha del arquero
           </a>
+
         )}
 
       </div>
