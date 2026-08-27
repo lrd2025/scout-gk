@@ -12,12 +12,21 @@ import { supabase } from "../lib/supabase";
    TIPOS
 ========================================================= */
 
-type DashboardRow = {
+type Player = {
+  id: string;
+  full_name: string;
+  position: string;
+  birth_date: string | null;
+  height_cm: number | null;
+  active: boolean;
+};
+
+type Tracking = {
   player_id: string;
 
-  reports_count: number;
-  matches_observed: number;
-  minutes_observed: number;
+  reports_count: number | null;
+  matches_observed: number | null;
+  minutes_observed: number | null;
 
   current_level_score: number | null;
   potential_score: number | null;
@@ -28,15 +37,11 @@ type DashboardRow = {
 
   evidence_level: string | null;
   trend: string | null;
+};
 
-  players: {
-    id: string;
-    full_name: string;
-    position: string;
-    birth_date: string | null;
-    height_cm: number | null;
-    active: boolean;
-  } | null;
+type DashboardPlayer = {
+  player: Player;
+  tracking: Tracking | null;
 };
 
 /* =========================================================
@@ -59,6 +64,43 @@ function formatScore(
   return Number(
     value
   ).toFixed(2);
+}
+
+function calculateAge(
+  birthDate:
+    | string
+    | null
+) {
+  if (!birthDate) {
+    return null;
+  }
+
+  const birth =
+    new Date(birthDate);
+
+  const today =
+    new Date();
+
+  let age =
+    today.getFullYear() -
+    birth.getFullYear();
+
+  const monthDifference =
+    today.getMonth() -
+    birth.getMonth();
+
+  if (
+    monthDifference < 0 ||
+    (
+      monthDifference === 0 &&
+      today.getDate() <
+        birth.getDate()
+    )
+  ) {
+    age--;
+  }
+
+  return age;
 }
 
 function evidenceLabel(
@@ -88,54 +130,17 @@ function evidenceLabel(
   }
 }
 
-function calculateAge(
-  birthDate:
-    | string
-    | null
-) {
-  if (!birthDate) {
-    return null;
-  }
-
-  const birth =
-    new Date(birthDate);
-
-  const today =
-    new Date();
-
-  let age =
-    today.getFullYear() -
-    birth.getFullYear();
-
-  const month =
-    today.getMonth() -
-    birth.getMonth();
-
-  if (
-    month < 0 ||
-    (
-      month === 0 &&
-      today.getDate() <
-        birth.getDate()
-    )
-  ) {
-    age--;
-  }
-
-  return age;
-}
-
 /* =========================================================
    DASHBOARD
 ========================================================= */
 
-export default function Dashboard() {
+export default function DashboardPage() {
   const [
-    rows,
-    setRows,
+    dashboardPlayers,
+    setDashboardPlayers,
   ] =
     useState<
-      DashboardRow[]
+      DashboardPlayer[]
     >([]);
 
   const [
@@ -168,7 +173,12 @@ export default function Dashboard() {
 
   async function loadDashboard() {
     setLoading(true);
+
     setErrorMessage("");
+
+    /* -----------------------------------------------------
+       SESIÓN
+    ----------------------------------------------------- */
 
     const {
       data: authData,
@@ -178,7 +188,7 @@ export default function Dashboard() {
 
     if (authError) {
       console.error(
-        "Error leyendo sesión:",
+        "Error de autenticación:",
         authError
       );
 
@@ -196,7 +206,9 @@ export default function Dashboard() {
         false
       );
 
-      setRows([]);
+      setDashboardPlayers(
+        []
+      );
 
       setLoading(false);
 
@@ -208,12 +220,62 @@ export default function Dashboard() {
     );
 
     /* -----------------------------------------------------
-       TRACKING + JUGADORES
+       1. JUGADORES ACTIVOS
     ----------------------------------------------------- */
 
     const {
-      data,
-      error,
+      data: playersData,
+      error: playersError,
+    } =
+      await supabase
+        .from("players")
+        .select(`
+          id,
+          full_name,
+          position,
+          birth_date,
+          height_cm,
+          active
+        `)
+        .eq(
+          "active",
+          true
+        )
+        .order(
+          "full_name",
+          {
+            ascending: true,
+          }
+        );
+
+    if (playersError) {
+      console.error(
+        "Error cargando jugadores:",
+        playersError
+      );
+
+      setErrorMessage(
+        playersError.message
+      );
+
+      setLoading(false);
+
+      return;
+    }
+
+    const activePlayers =
+      (
+        playersData ||
+        []
+      ) as Player[];
+
+    /* -----------------------------------------------------
+       2. TRACKING
+    ----------------------------------------------------- */
+
+    const {
+      data: trackingData,
+      error: trackingError,
     } =
       await supabase
         .from(
@@ -230,90 +292,108 @@ export default function Dashboard() {
           recruitment_priority,
           observation_priority,
           evidence_level,
-          trend,
-
-          players:player_id (
-            id,
-            full_name,
-            position,
-            birth_date,
-            height_cm,
-            active
-          )
+          trend
         `);
 
-    if (error) {
+    if (trackingError) {
       console.error(
-        "Error cargando dashboard:",
-        error
+        "Error cargando tracking:",
+        trackingError
       );
 
       setErrorMessage(
-        error.message
+        trackingError.message
       );
-
-      setRows([]);
 
       setLoading(false);
 
       return;
     }
 
+    const trackingRows =
+      (
+        trackingData ||
+        []
+      ) as Tracking[];
+
     /* -----------------------------------------------------
-       SOLO JUGADORES ACTIVOS
+       3. MAPA TRACKING
     ----------------------------------------------------- */
 
-    const allRows =
-      (
-        data || []
-      ) as unknown as
-        DashboardRow[];
+    const trackingMap =
+      new Map<
+        string,
+        Tracking
+      >();
 
-    const activeRows =
-      allRows.filter(
+    trackingRows.forEach(
+      (
+        tracking
+      ) => {
+        trackingMap.set(
+          tracking.player_id,
+          tracking
+        );
+      }
+    );
+
+    /* -----------------------------------------------------
+       4. COMBINAR
+    ----------------------------------------------------- */
+
+    const combined:
+      DashboardPlayer[] =
+      activePlayers.map(
         (
-          row
-        ) =>
-          row.players &&
-          row.players.active ===
-            true
+          player
+        ) => ({
+          player,
+
+          tracking:
+            trackingMap.get(
+              player.id
+            ) ||
+            null,
+        })
       );
 
-    setRows(
-      activeRows
+    setDashboardPlayers(
+      combined
     );
 
     setLoading(false);
   }
 
   /* =======================================================
-     MÉTRICAS GENERALES
+     ESTADÍSTICAS
   ======================================================= */
 
   const totalPlayers =
-    rows.length;
+    dashboardPlayers.length;
 
   const totalGoalkeepers =
-    rows.filter(
+    dashboardPlayers.filter(
       (
-        row
+        item
       ) =>
-        row.players
-          ?.position ===
+        item.player.position ===
         "GK"
     ).length;
 
   const youngPromises =
-    rows.filter(
+    dashboardPlayers.filter(
       (
-        row
+        item
       ) => {
         const age =
           calculateAge(
-            row.players
-              ?.birth_date ||
-              null
+            item.player.birth_date
           );
+
+        const potential =
+          item.tracking
+            ?.potential_score ??
+          0;
 
         if (
           age === null
@@ -323,54 +403,46 @@ export default function Dashboard() {
 
         return (
           age <= 23 &&
-          (
-            row.potential_score ??
-            0
-          ) >= 8
+          potential >= 8
         );
       }
     ).length;
 
-  const observationPriorityCount =
-    rows.filter(
+  const priorityObservation =
+    dashboardPlayers.filter(
       (
-        row
+        item
       ) =>
         (
-          row.observation_priority ??
+          item.tracking
+            ?.observation_priority ??
           0
         ) >= 8
     ).length;
 
   /* =======================================================
-     RANKINGS
+     PRIORIDAD OBSERVACIÓN
   ======================================================= */
 
   const observationRanking =
     useMemo(
       () => {
         return [
-          ...rows,
+          ...dashboardPlayers,
         ]
-          .filter(
-            (
-              row
-            ) =>
-              row.players &&
-              row.players.active ===
-                true
-          )
           .sort(
             (
               a,
               b
             ) =>
               (
-                b.observation_priority ??
+                b.tracking
+                  ?.observation_priority ??
                 0
               ) -
               (
-                a.observation_priority ??
+                a.tracking
+                  ?.observation_priority ??
                 0
               )
           )
@@ -379,34 +451,34 @@ export default function Dashboard() {
             5
           );
       },
-      [rows]
+      [
+        dashboardPlayers,
+      ]
     );
+
+  /* =======================================================
+     PRIORIDAD INCORPORACIÓN
+  ======================================================= */
 
   const recruitmentRanking =
     useMemo(
       () => {
         return [
-          ...rows,
+          ...dashboardPlayers,
         ]
-          .filter(
-            (
-              row
-            ) =>
-              row.players &&
-              row.players.active ===
-                true
-          )
           .sort(
             (
               a,
               b
             ) =>
               (
-                b.recruitment_priority ??
+                b.tracking
+                  ?.recruitment_priority ??
                 0
               ) -
               (
-                a.recruitment_priority ??
+                a.tracking
+                  ?.recruitment_priority ??
                 0
               )
           )
@@ -415,43 +487,45 @@ export default function Dashboard() {
             5
           );
       },
-      [rows]
+      [
+        dashboardPlayers,
+      ]
     );
 
-  const currentLevelRanking =
+  /* =======================================================
+     CURRENT LEVEL
+  ======================================================= */
+
+  const currentRanking =
     useMemo(
       () => {
         return [
-          ...rows,
+          ...dashboardPlayers,
         ]
-          .filter(
-            (
-              row
-            ) =>
-              row.players &&
-              row.players.active ===
-                true
-          )
           .sort(
             (
               a,
               b
             ) =>
               (
-                b.current_level_score ??
+                b.tracking
+                  ?.current_level_score ??
                 0
               ) -
               (
-                a.current_level_score ??
+                a.tracking
+                  ?.current_level_score ??
                 0
               )
           )
           .slice(
             0,
-            5
+            10
           );
       },
-      [rows]
+      [
+        dashboardPlayers,
+      ]
     );
 
   /* =======================================================
@@ -463,58 +537,28 @@ export default function Dashboard() {
     false
   ) {
     return (
-      <div className="dashboard-shell">
+      <div className="space-y-6">
 
-        <section className="hero-panel">
+        <div>
 
-          <div className="hero-copy">
+          <h1 className="text-3xl font-black">
+            Dashboard
+          </h1>
 
-            <h1 className="hero-title">
-              Scout GK
-            </h1>
+          <p className="mt-2 text-slate-400">
+            Inteligencia longitudinal y prioridades de scouting.
+          </p>
 
-            <p className="hero-subtitle">
-              Inteligencia,
-              análisis y
-              valoración
-              longitudinal de
-              arqueros.
-            </p>
+        </div>
 
-          </div>
+        <div className="card">
 
-          <div className="hero-badge">
-
-            <strong>
-              ATHLON BASE
-            </strong>
-
-            <span>
-              Departamento de
-              Scouting
-            </span>
-
-          </div>
-
-        </section>
-
-        <section className="card">
-
-          <h2 className="panel-title">
-
-            <span className="panel-title-dot">
-              ⌑
-            </span>
-
+          <h2 className="text-xl font-black">
             Acceso requerido
-
           </h2>
 
-          <p className="mt-3 text-sm text-slate-400">
-            Iniciá sesión para
-            consultar rankings,
-            prioridades y
-            seguimiento.
+          <p className="mt-3 text-slate-400">
+            Iniciá sesión para consultar el Dashboard.
           </p>
 
           <a
@@ -524,58 +568,42 @@ export default function Dashboard() {
             Ingresar
           </a>
 
-        </section>
+        </div>
 
       </div>
     );
   }
 
   /* =======================================================
-     DASHBOARD PRINCIPAL
+     DASHBOARD
   ======================================================= */
 
   return (
-    <div className="dashboard-shell">
+    <div className="space-y-8">
 
-      {/* HERO */}
+      {/* ===================================================
+          CABECERA
+      =================================================== */}
 
-      <section className="hero-panel">
+      <div>
 
-        <div className="hero-copy">
+        <h1 className="text-3xl font-black">
+          Dashboard
+        </h1>
 
-          <h1 className="hero-title">
-            Bienvenido a Scout GK
-          </h1>
+        <p className="mt-2 text-slate-400">
+          Inteligencia longitudinal y prioridades de scouting.
+        </p>
 
-          <p className="hero-subtitle">
-            Inteligencia,
-            datos y contexto
-            para decisiones de
-            scouting.
-          </p>
+      </div>
 
-        </div>
-
-        <div className="hero-badge">
-
-          <strong>
-            SCOUT GK
-          </strong>
-
-          <span>
-            Inteligencia y
-            valoración de
-            arqueros
-          </span>
-
-        </div>
-
-      </section>
-
-      {/* ERROR */}
+      {/* ===================================================
+          ERROR
+      =================================================== */}
 
       {errorMessage && (
-        <section className="rounded-xl border border-red-900/50 bg-red-950/20 p-4">
+
+        <div className="rounded-xl border border-red-900/50 bg-red-950/20 p-4">
 
           <div className="flex items-start justify-between gap-4">
 
@@ -597,169 +625,133 @@ export default function Dashboard() {
 
           </div>
 
-        </section>
+        </div>
+
       )}
 
-      {/* ESTADÍSTICAS */}
+      {/* ===================================================
+          RESUMEN
+      =================================================== */}
 
-      <section className="stat-grid">
+      <section className="grid gap-4 md:grid-cols-4">
 
         <StatCard
-          icon="♙"
           label="Jugadores"
           value={
             totalPlayers
           }
-          caption="Base activa"
         />
 
         <StatCard
-          icon="✋"
           label="Arqueros"
           value={
             totalGoalkeepers
           }
-          caption="Especialidad GK"
         />
 
         <StatCard
-          icon="★"
           label="Jóvenes promesas"
           value={
             youngPromises
           }
-          caption="Proyección U23"
         />
 
         <StatCard
-          icon="◎"
           label="Seguimiento prioritario"
           value={
-            observationPriorityCount
+            priorityObservation
           }
-          caption="En observación"
         />
 
       </section>
 
-      {/* RANKINGS */}
+      {/* ===================================================
+          OBSERVACIÓN + INCORPORACIÓN
+      =================================================== */}
 
-      <section className="ranking-grid">
+      <section className="grid gap-4 lg:grid-cols-2">
 
-        <RankingCard
-          icon="✪"
-          title="Top Current Level"
-          description="Arqueros con mayor nivel acumulado."
-          rows={
-            currentLevelRanking
-          }
-          field="current_level_score"
-        />
-
-        <RankingCard
-          icon="◎"
+        <RankingPanel
           title="Prioridad de observación"
           description="A quién conviene volver a observar."
-          rows={
+          players={
             observationRanking
           }
-          field="observation_priority"
+          scoreField="observation_priority"
+        />
+
+        <RankingPanel
+          title="Prioridad de incorporación"
+          description="Jugadores con mejor combinación de rendimiento, potencial y decisión scout."
+          players={
+            recruitmentRanking
+          }
+          scoreField="recruitment_priority"
         />
 
       </section>
 
-      <section className="ranking-grid">
+      {/* ===================================================
+          CURRENT LEVEL
+      =================================================== */}
 
-        <RankingCard
-          icon="↗"
-          title="Prioridad de incorporación"
-          description="Mejor combinación de rendimiento, potencial y decisión scout."
-          rows={
-            recruitmentRanking
-          }
-          field="recruitment_priority"
-        />
+      <section className="card">
 
-        {/* ACCIONES RÁPIDAS */}
+        <div>
 
-        <section className="card">
-
-          <h2 className="panel-title">
-
-            <span className="panel-title-dot">
-              ⚡
-            </span>
-
-            Acciones rápidas
-
+          <h2 className="text-xl font-black">
+            Current Level
           </h2>
 
           <p className="mt-1 text-sm text-slate-400">
-            Accesos directos
-            a las tareas
-            principales.
+            Jugadores con mayor nivel acumulado.
           </p>
 
-          <div className="quick-actions mt-5">
+        </div>
 
-            <a
-              href="/players/new"
-              className="quick-action primary"
-            >
-              <span className="quick-action-icon">
-                ♙
-              </span>
+        {loading ? (
 
-              Nuevo jugador
-            </a>
+          <div className="mt-5 text-sm text-slate-400">
+            Actualizando Dashboard...
+          </div>
 
-            <a
-              href="/videos/new"
-              className="quick-action"
-            >
-              <span className="quick-action-icon">
-                ▶
-              </span>
+        ) : currentRanking.length ===
+          0 ? (
 
-              Nuevo video
-            </a>
+          <div className="mt-5 text-sm text-slate-500">
+            No hay jugadores activos.
+          </div>
 
-            <a
-              href="/reports/new"
-              className="quick-action"
-            >
-              <span className="quick-action-icon">
-                ▤
-              </span>
+        ) : (
 
-              Generar informe
-            </a>
+          <div className="mt-5 space-y-3">
 
-            <a
-              href="/compare"
-              className="quick-action"
-            >
-              <span className="quick-action-icon">
-                ⚖
-              </span>
+            {currentRanking.map(
+              (
+                item,
+                index
+              ) => (
 
-              Comparar arqueros
-            </a>
+                <CurrentLevelRow
+                  key={
+                    item.player.id
+                  }
+                  item={
+                    item
+                  }
+                  index={
+                    index + 1
+                  }
+                />
+
+              )
+            )}
 
           </div>
 
-        </section>
+        )}
 
       </section>
-
-      {/* CARGANDO */}
-
-      {loading && (
-        <div className="card text-sm text-slate-400">
-          Actualizando
-          dashboard...
-        </div>
-      )}
 
     </div>
   );
@@ -770,33 +762,21 @@ export default function Dashboard() {
 ========================================================= */
 
 function StatCard({
-  icon,
   label,
   value,
-  caption,
 }: {
-  icon: string;
   label: string;
   value: number;
-  caption: string;
 }) {
   return (
-    <div className="card dashboard-stat">
+    <div className="card">
 
-      <div className="stat-icon">
-        {icon}
-      </div>
-
-      <div className="mt-3 text-sm text-slate-300">
+      <div className="text-sm text-slate-400">
         {label}
       </div>
 
-      <div className="stat-value">
+      <div className="mt-2 text-3xl font-black">
         {value}
-      </div>
-
-      <div className="stat-caption">
-        {caption}
       </div>
 
     </div>
@@ -804,79 +784,183 @@ function StatCard({
 }
 
 /* =========================================================
-   RANKING CARD
+   RANKING PANEL
 ========================================================= */
 
-function RankingCard({
-  icon,
+function RankingPanel({
   title,
   description,
-  rows,
-  field,
+  players,
+  scoreField,
 }: {
-  icon: string;
   title: string;
+
   description: string;
 
-  rows:
-    DashboardRow[];
+  players:
+    DashboardPlayer[];
 
-  field:
-    | "current_level_score"
+  scoreField:
     | "observation_priority"
     | "recruitment_priority";
 }) {
   return (
     <div className="card">
 
-      <h2 className="panel-title">
+      <div>
 
-        <span className="panel-title-dot">
-          {icon}
-        </span>
+        <h2 className="text-xl font-black">
+          {title}
+        </h2>
 
-        {title}
+        <p className="mt-1 text-sm text-slate-400">
+          {description}
+        </p>
 
-      </h2>
+      </div>
 
-      <p className="mt-1 text-sm text-slate-400">
-        {description}
-      </p>
+      <div className="mt-5 space-y-3">
 
-      <div className="mt-5">
-
-        {rows.length ===
+        {players.length ===
         0 ? (
 
           <p className="text-sm text-slate-500">
-            Sin jugadores
-            priorizados.
+            Sin jugadores priorizados.
           </p>
 
         ) : (
 
-          rows.map(
+          players.map(
             (
-              row,
+              item,
               index
-            ) => (
+            ) => {
 
-              <PlayerRow
-                key={
-                  row.player_id
-                }
-                index={
-                  index + 1
-                }
-                row={
-                  row
-                }
-                value={
-                  row[field]
-                }
-              />
+              const score =
+                item.tracking
+                  ?.[
+                    scoreField
+                  ];
 
-            )
+              return (
+
+                <a
+                  key={
+                    item.player.id
+                  }
+                  href={`/players/${item.player.id}`}
+                  className="block rounded-xl border border-slate-800 p-4 transition hover:border-slate-600 hover:bg-slate-900/40"
+                >
+
+                  <div className="flex items-center justify-between gap-5">
+
+                    <div className="flex min-w-0 items-center gap-4">
+
+                      <div className="text-xl font-black text-slate-500">
+
+                        {
+                          index +
+                          1
+                        }
+
+                      </div>
+
+                      <div className="min-w-0">
+
+                        <div className="truncate font-black">
+
+                          {
+                            item.player
+                              .full_name
+                          }
+
+                        </div>
+
+                        <div className="mt-1 text-xs text-slate-500">
+
+                          {
+                            item.player
+                              .position
+                          }
+
+                          {item.player
+                            .height_cm &&
+                            ` · ${item.player.height_cm} cm`}
+
+                          {" · "}
+
+                          {
+                            item.tracking
+                              ?.reports_count ??
+                            0
+                          }{" "}
+                          informe
+                          {
+                            (
+                              item.tracking
+                                ?.reports_count ??
+                              0
+                            ) ===
+                            1
+                              ? ""
+                              : "s"
+                          }
+
+                        </div>
+
+                        <div className="mt-1 text-xs text-slate-600">
+
+                          Current{" "}
+
+                          {formatScore(
+                            item.tracking
+                              ?.current_level_score
+                          )}
+
+                          {" · "}
+
+                          Potential{" "}
+
+                          {formatScore(
+                            item.tracking
+                              ?.potential_score
+                          )}
+
+                          {" · "}
+
+                          {evidenceLabel(
+                            item.tracking
+                              ?.evidence_level
+                          )}
+
+                        </div>
+
+                      </div>
+
+                    </div>
+
+                    <div className="text-right">
+
+                      <div className="text-2xl font-black">
+
+                        {formatScore(
+                          score
+                        )}
+
+                      </div>
+
+                      <div className="text-xs text-slate-500">
+                        /10
+                      </div>
+
+                    </div>
+
+                  </div>
+
+                </a>
+
+              );
+            }
           )
 
         )}
@@ -888,124 +972,101 @@ function RankingCard({
 }
 
 /* =========================================================
-   PLAYER ROW
+   CURRENT LEVEL ROW
 ========================================================= */
 
-function PlayerRow({
-  row,
-  value,
+function CurrentLevelRow({
+  item,
   index,
 }: {
-  row: DashboardRow;
-
-  value:
-    | number
-    | null;
-
+  item: DashboardPlayer;
   index: number;
 }) {
-  const player =
-    row.players;
-
-  if (
-    !player ||
-    player.active !==
-      true
-  ) {
-    return null;
-  }
-
-  const safeScore =
-    Math.max(
-      0,
-      Math.min(
-        10,
-        Number(
-          value ??
-            0
-        )
-      )
-    );
-
   return (
     <a
-      href={`/players/${player.id}`}
-      className="player-rank-row"
+      href={`/players/${item.player.id}`}
+      className="block rounded-xl border border-slate-800 p-4 transition hover:border-slate-600 hover:bg-slate-900/40"
     >
 
-      <div className="rank-number">
-        {index}
-      </div>
+      <div className="flex items-center justify-between gap-5">
 
-      <div className="rank-main">
+        <div className="flex min-w-0 items-center gap-4">
 
-        <div className="rank-name">
-          {player.full_name}
+          <div className="text-xl font-black text-slate-500">
+
+            {index}
+
+          </div>
+
+          <div className="min-w-0">
+
+            <div className="truncate font-black">
+
+              {item.player.full_name}
+
+            </div>
+
+            <div className="mt-1 text-xs text-slate-500">
+
+              {item.player.position}
+
+              {item.player.height_cm &&
+                ` · ${item.player.height_cm} cm`}
+
+              {" · "}
+
+              {item.tracking
+                ?.reports_count ??
+                0}{" "}
+              informe
+              {
+                (
+                  item.tracking
+                    ?.reports_count ??
+                  0
+                ) === 1
+                  ? ""
+                  : "s"
+              }
+
+            </div>
+
+            <div className="mt-1 text-xs text-slate-600">
+
+              Potential{" "}
+
+              {formatScore(
+                item.tracking
+                  ?.potential_score
+              )}
+
+              {" · "}
+
+              {evidenceLabel(
+                item.tracking
+                  ?.evidence_level
+              )}
+
+            </div>
+
+          </div>
+
         </div>
 
-        <div className="rank-meta">
+        <div className="text-right">
 
-          {player.position}
+          <div className="text-2xl font-black">
 
-          {player.height_cm &&
-            ` · ${player.height_cm} cm`}
+            {formatScore(
+              item.tracking
+                ?.current_level_score
+            )}
 
-          {" · "}
+          </div>
 
-          {row.reports_count}{" "}
-          informe
-
-          {row.reports_count ===
-          1
-            ? ""
-            : "s"}
-
-        </div>
-
-        <div className="rank-meta">
-
-          Current{" "}
-
-          {formatScore(
-            row.current_level_score
-          )}
-
-          {" · "}
-
-          Potential{" "}
-
-          {formatScore(
-            row.potential_score
-          )}
-
-          {" · "}
-
-          {evidenceLabel(
-            row.evidence_level
-          )}
-
-        </div>
-
-      </div>
-
-      <div className="rank-score">
-
-        {formatScore(
-          value
-        )}
-
-        <small>
-          /10
-        </small>
-
-        <div className="score-bar">
-
-          <span
-            style={{
-              width:
-                `${safeScore * 10}%`,
-            }}
-          />
+          <div className="text-xs text-slate-500">
+            /10
+          </div>
 
         </div>
 
