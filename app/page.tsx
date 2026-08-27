@@ -1,10 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
 import { supabase } from "../lib/supabase";
+
+/* =========================================================
+   TIPOS
+========================================================= */
 
 type DashboardRow = {
   player_id: string;
+
   reports_count: number;
   matches_observed: number;
   minutes_observed: number;
@@ -25,21 +35,37 @@ type DashboardRow = {
     position: string;
     birth_date: string | null;
     height_cm: number | null;
+    active: boolean;
   } | null;
 };
 
+/* =========================================================
+   HELPERS
+========================================================= */
+
 function formatScore(
-  value: number | null | undefined
+  value:
+    | number
+    | null
+    | undefined
 ) {
-  if (value === null || value === undefined) {
+  if (
+    value === null ||
+    value === undefined
+  ) {
     return "—";
   }
 
-  return Number(value).toFixed(2);
+  return Number(
+    value
+  ).toFixed(2);
 }
 
 function evidenceLabel(
-  value: string | null | undefined
+  value:
+    | string
+    | null
+    | undefined
 ) {
   switch (value) {
     case "VERY_LOW":
@@ -58,33 +84,24 @@ function evidenceLabel(
       return "Consolidada";
 
     default:
-      return "—";
+      return "Sin evidencia";
   }
-}
-
-function trendLabel(
-  value: string | null | undefined
-) {
-  if (value === "ASCENDING") {
-    return "↑ Ascendente";
-  }
-
-  if (value === "DESCENDING") {
-    return "↓ Descendente";
-  }
-
-  return "→ Estable";
 }
 
 function calculateAge(
-  birthDate: string | null
+  birthDate:
+    | string
+    | null
 ) {
   if (!birthDate) {
     return null;
   }
 
-  const birth = new Date(birthDate);
-  const today = new Date();
+  const birth =
+    new Date(birthDate);
+
+  const today =
+    new Date();
 
   let age =
     today.getFullYear() -
@@ -108,15 +125,42 @@ function calculateAge(
   return age;
 }
 
-export default function Dashboard() {
-  const [rows, setRows] =
-    useState<DashboardRow[]>([]);
+/* =========================================================
+   DASHBOARD
+========================================================= */
 
-  const [loading, setLoading] =
+export default function Dashboard() {
+  const [
+    rows,
+    setRows,
+  ] =
+    useState<
+      DashboardRow[]
+    >([]);
+
+  const [
+    loading,
+    setLoading,
+  ] =
     useState(true);
 
-  const [authenticated, setAuthenticated] =
-    useState<boolean | null>(null);
+  const [
+    authenticated,
+    setAuthenticated,
+  ] =
+    useState<
+      boolean | null
+    >(null);
+
+  const [
+    errorMessage,
+    setErrorMessage,
+  ] =
+    useState("");
+
+  /* =======================================================
+     CARGA INICIAL
+  ======================================================= */
 
   useEffect(() => {
     loadDashboard();
@@ -124,19 +168,48 @@ export default function Dashboard() {
 
   async function loadDashboard() {
     setLoading(true);
+    setErrorMessage("");
 
     const {
       data: authData,
+      error: authError,
     } =
       await supabase.auth.getSession();
 
-    if (!authData.session) {
-      setAuthenticated(false);
+    if (authError) {
+      console.error(
+        "Error leyendo sesión:",
+        authError
+      );
+
+      setErrorMessage(
+        authError.message
+      );
+
       setLoading(false);
+
       return;
     }
 
-    setAuthenticated(true);
+    if (!authData.session) {
+      setAuthenticated(
+        false
+      );
+
+      setRows([]);
+
+      setLoading(false);
+
+      return;
+    }
+
+    setAuthenticated(
+      true
+    );
+
+    /* -----------------------------------------------------
+       TRACKING + JUGADORES
+    ----------------------------------------------------- */
 
     const {
       data,
@@ -164,160 +237,284 @@ export default function Dashboard() {
             full_name,
             position,
             birth_date,
-            height_cm
+            height_cm,
+            active
           )
         `);
 
     if (error) {
-      console.error(error);
+      console.error(
+        "Error cargando dashboard:",
+        error
+      );
+
+      setErrorMessage(
+        error.message
+      );
+
+      setRows([]);
+
       setLoading(false);
+
       return;
     }
 
+    /* -----------------------------------------------------
+       SOLO JUGADORES ACTIVOS
+    ----------------------------------------------------- */
+
+    const allRows =
+      (
+        data || []
+      ) as unknown as
+        DashboardRow[];
+
+    const activeRows =
+      allRows.filter(
+        (
+          row
+        ) =>
+          row.players &&
+          row.players.active ===
+            true
+      );
+
     setRows(
-      (data || []) as unknown as DashboardRow[]
+      activeRows
     );
 
     setLoading(false);
   }
+
+  /* =======================================================
+     MÉTRICAS GENERALES
+  ======================================================= */
 
   const totalPlayers =
     rows.length;
 
   const totalGoalkeepers =
     rows.filter(
-      (row) =>
-        row.players?.position === "GK"
+      (
+        row
+      ) =>
+        row.players
+          ?.position ===
+        "GK"
     ).length;
 
   const youngPromises =
-    rows.filter((row) => {
-      const age =
-        calculateAge(
-          row.players?.birth_date || null
+    rows.filter(
+      (
+        row
+      ) => {
+        const age =
+          calculateAge(
+            row.players
+              ?.birth_date ||
+              null
+          );
+
+        if (
+          age === null
+        ) {
+          return false;
+        }
+
+        return (
+          age <= 23 &&
+          (
+            row.potential_score ??
+            0
+          ) >= 8
         );
-
-      if (
-        age === null
-      ) {
-        return false;
       }
-
-      return (
-        age <= 23 &&
-        (
-          row.potential_score ??
-          0
-        ) >= 8
-      );
-    }).length;
+    ).length;
 
   const observationPriorityCount =
     rows.filter(
-      (row) =>
+      (
+        row
+      ) =>
         (
           row.observation_priority ??
           0
         ) >= 8
     ).length;
 
+  /* =======================================================
+     RANKINGS
+  ======================================================= */
+
   const observationRanking =
-    useMemo(() => {
-      return [...rows]
-        .filter(
-          (row) =>
-            row.players
-        )
-        .sort(
-          (a, b) =>
+    useMemo(
+      () => {
+        return [
+          ...rows,
+        ]
+          .filter(
             (
-              b.observation_priority ??
-              0
-            ) -
+              row
+            ) =>
+              row.players &&
+              row.players.active ===
+                true
+          )
+          .sort(
             (
-              a.observation_priority ??
-              0
-            )
-        )
-        .slice(
-          0,
-          5
-        );
-    }, [rows]);
+              a,
+              b
+            ) =>
+              (
+                b.observation_priority ??
+                0
+              ) -
+              (
+                a.observation_priority ??
+                0
+              )
+          )
+          .slice(
+            0,
+            5
+          );
+      },
+      [rows]
+    );
 
   const recruitmentRanking =
-    useMemo(() => {
-      return [...rows]
-        .filter(
-          (row) =>
-            row.players
-        )
-        .sort(
-          (a, b) =>
+    useMemo(
+      () => {
+        return [
+          ...rows,
+        ]
+          .filter(
             (
-              b.recruitment_priority ??
-              0
-            ) -
+              row
+            ) =>
+              row.players &&
+              row.players.active ===
+                true
+          )
+          .sort(
             (
-              a.recruitment_priority ??
-              0
-            )
-        )
-        .slice(
-          0,
-          5
-        );
-    }, [rows]);
+              a,
+              b
+            ) =>
+              (
+                b.recruitment_priority ??
+                0
+              ) -
+              (
+                a.recruitment_priority ??
+                0
+              )
+          )
+          .slice(
+            0,
+            5
+          );
+      },
+      [rows]
+    );
 
   const currentLevelRanking =
-    useMemo(() => {
-      return [...rows]
-        .filter(
-          (row) =>
-            row.players
-        )
-        .sort(
-          (a, b) =>
+    useMemo(
+      () => {
+        return [
+          ...rows,
+        ]
+          .filter(
             (
-              b.current_level_score ??
-              0
-            ) -
+              row
+            ) =>
+              row.players &&
+              row.players.active ===
+                true
+          )
+          .sort(
             (
-              a.current_level_score ??
-              0
-            )
-        )
-        .slice(
-          0,
-          5
-        );
-    }, [rows]);
+              a,
+              b
+            ) =>
+              (
+                b.current_level_score ??
+                0
+              ) -
+              (
+                a.current_level_score ??
+                0
+              )
+          )
+          .slice(
+            0,
+            5
+          );
+      },
+      [rows]
+    );
+
+  /* =======================================================
+     SIN SESIÓN
+  ======================================================= */
 
   if (
-    authenticated === false
+    authenticated ===
+    false
   ) {
     return (
-      <div className="space-y-6">
+      <div className="dashboard-shell">
 
-        <div>
-          <h1 className="text-3xl font-black">
-            Dashboard
-          </h1>
+        <section className="hero-panel">
 
-          <p className="mt-2 text-slate-400">
-            Inteligencia longitudinal de scouting.
-          </p>
-        </div>
+          <div className="hero-copy">
 
-        <div className="card">
+            <h1 className="hero-title">
+              Scout GK
+            </h1>
 
-          <h2 className="text-xl font-black">
+            <p className="hero-subtitle">
+              Inteligencia,
+              análisis y
+              valoración
+              longitudinal de
+              arqueros.
+            </p>
+
+          </div>
+
+          <div className="hero-badge">
+
+            <strong>
+              ATHLON BASE
+            </strong>
+
+            <span>
+              Departamento de
+              Scouting
+            </span>
+
+          </div>
+
+        </section>
+
+        <section className="card">
+
+          <h2 className="panel-title">
+
+            <span className="panel-title-dot">
+              ⌑
+            </span>
+
             Acceso requerido
+
           </h2>
 
-          <p className="mt-3 text-slate-400">
-            Iniciá sesión para consultar rankings,
-            prioridades y seguimiento.
+          <p className="mt-3 text-sm text-slate-400">
+            Iniciá sesión para
+            consultar rankings,
+            prioridades y
+            seguimiento.
           </p>
 
           <a
@@ -327,54 +524,140 @@ export default function Dashboard() {
             Ingresar
           </a>
 
-        </div>
+        </section>
 
       </div>
     );
   }
 
+  /* =======================================================
+     DASHBOARD PRINCIPAL
+  ======================================================= */
+
   return (
-    <div className="space-y-8">
+    <div className="dashboard-shell">
 
-      <div>
-        <h1 className="text-3xl font-black">
-          Dashboard
-        </h1>
+      {/* HERO */}
 
-        <p className="mt-2 text-slate-400">
-          Inteligencia longitudinal y prioridades de scouting.
-        </p>
-      </div>
+      <section className="hero-panel">
 
-      <section className="grid gap-4 md:grid-cols-4">
+        <div className="hero-copy">
+
+          <h1 className="hero-title">
+            Bienvenido a Scout GK
+          </h1>
+
+          <p className="hero-subtitle">
+            Inteligencia,
+            datos y contexto
+            para decisiones de
+            scouting.
+          </p>
+
+        </div>
+
+        <div className="hero-badge">
+
+          <strong>
+            SCOUT GK
+          </strong>
+
+          <span>
+            Inteligencia y
+            valoración de
+            arqueros
+          </span>
+
+        </div>
+
+      </section>
+
+      {/* ERROR */}
+
+      {errorMessage && (
+        <section className="rounded-xl border border-red-900/50 bg-red-950/20 p-4">
+
+          <div className="flex items-start justify-between gap-4">
+
+            <p className="text-sm text-red-300">
+              {errorMessage}
+            </p>
+
+            <button
+              type="button"
+              onClick={() =>
+                setErrorMessage(
+                  ""
+                )
+              }
+              className="text-sm text-slate-400 hover:text-white"
+            >
+              Cerrar
+            </button>
+
+          </div>
+
+        </section>
+      )}
+
+      {/* ESTADÍSTICAS */}
+
+      <section className="stat-grid">
 
         <StatCard
+          icon="♙"
           label="Jugadores"
-          value={totalPlayers}
+          value={
+            totalPlayers
+          }
+          caption="Base activa"
         />
 
         <StatCard
+          icon="✋"
           label="Arqueros"
-          value={totalGoalkeepers}
+          value={
+            totalGoalkeepers
+          }
+          caption="Especialidad GK"
         />
 
         <StatCard
+          icon="★"
           label="Jóvenes promesas"
-          value={youngPromises}
+          value={
+            youngPromises
+          }
+          caption="Proyección U23"
         />
 
         <StatCard
+          icon="◎"
           label="Seguimiento prioritario"
           value={
             observationPriorityCount
           }
+          caption="En observación"
         />
 
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-2">
+      {/* RANKINGS */}
+
+      <section className="ranking-grid">
 
         <RankingCard
+          icon="✪"
+          title="Top Current Level"
+          description="Arqueros con mayor nivel acumulado."
+          rows={
+            currentLevelRanking
+          }
+          field="current_level_score"
+        />
+
+        <RankingCard
+          icon="◎"
           title="Prioridad de observación"
           description="A quién conviene volver a observar."
           rows={
@@ -383,63 +666,98 @@ export default function Dashboard() {
           field="observation_priority"
         />
 
+      </section>
+
+      <section className="ranking-grid">
+
         <RankingCard
+          icon="↗"
           title="Prioridad de incorporación"
-          description="Jugadores con mejor combinación de rendimiento, potencial y decisión scout."
+          description="Mejor combinación de rendimiento, potencial y decisión scout."
           rows={
             recruitmentRanking
           }
           field="recruitment_priority"
         />
 
+        {/* ACCIONES RÁPIDAS */}
+
+        <section className="card">
+
+          <h2 className="panel-title">
+
+            <span className="panel-title-dot">
+              ⚡
+            </span>
+
+            Acciones rápidas
+
+          </h2>
+
+          <p className="mt-1 text-sm text-slate-400">
+            Accesos directos
+            a las tareas
+            principales.
+          </p>
+
+          <div className="quick-actions mt-5">
+
+            <a
+              href="/players/new"
+              className="quick-action primary"
+            >
+              <span className="quick-action-icon">
+                ♙
+              </span>
+
+              Nuevo jugador
+            </a>
+
+            <a
+              href="/videos/new"
+              className="quick-action"
+            >
+              <span className="quick-action-icon">
+                ▶
+              </span>
+
+              Nuevo video
+            </a>
+
+            <a
+              href="/reports/new"
+              className="quick-action"
+            >
+              <span className="quick-action-icon">
+                ▤
+              </span>
+
+              Generar informe
+            </a>
+
+            <a
+              href="/compare"
+              className="quick-action"
+            >
+              <span className="quick-action-icon">
+                ⚖
+              </span>
+
+              Comparar arqueros
+            </a>
+
+          </div>
+
+        </section>
+
       </section>
 
-      <section className="card">
-
-        <h2 className="text-xl font-black">
-          Current Level
-        </h2>
-
-        <p className="mt-1 text-sm text-slate-400">
-          Jugadores con mayor nivel acumulado.
-        </p>
-
-        <div className="mt-5 space-y-3">
-
-          {currentLevelRanking.length ===
-          0 ? (
-            <p className="text-sm text-slate-500">
-              Todavía no hay jugadores evaluados.
-            </p>
-          ) : (
-            currentLevelRanking.map(
-              (
-                row,
-                index
-              ) => (
-                <PlayerRow
-                  key={
-                    row.player_id
-                  }
-                  index={
-                    index + 1
-                  }
-                  row={row}
-                  value={
-                    row.current_level_score
-                  }
-                />
-              )
-            )
-          )}
-
-        </div>
-
-      </section>
+      {/* CARGANDO */}
 
       {loading && (
         <div className="card text-sm text-slate-400">
-          Actualizando dashboard...
+          Actualizando
+          dashboard...
         </div>
       )}
 
@@ -447,64 +765,102 @@ export default function Dashboard() {
   );
 }
 
+/* =========================================================
+   STAT CARD
+========================================================= */
+
 function StatCard({
+  icon,
   label,
   value,
+  caption,
 }: {
+  icon: string;
   label: string;
   value: number;
+  caption: string;
 }) {
   return (
-    <div className="card">
+    <div className="card dashboard-stat">
 
-      <div className="text-sm text-slate-400">
+      <div className="stat-icon">
+        {icon}
+      </div>
+
+      <div className="mt-3 text-sm text-slate-300">
         {label}
       </div>
 
-      <div className="mt-2 text-3xl font-black">
+      <div className="stat-value">
         {value}
+      </div>
+
+      <div className="stat-caption">
+        {caption}
       </div>
 
     </div>
   );
 }
 
+/* =========================================================
+   RANKING CARD
+========================================================= */
+
 function RankingCard({
+  icon,
   title,
   description,
   rows,
   field,
 }: {
+  icon: string;
   title: string;
   description: string;
-  rows: DashboardRow[];
+
+  rows:
+    DashboardRow[];
+
   field:
+    | "current_level_score"
     | "observation_priority"
     | "recruitment_priority";
 }) {
   return (
     <div className="card">
 
-      <h2 className="text-xl font-black">
+      <h2 className="panel-title">
+
+        <span className="panel-title-dot">
+          {icon}
+        </span>
+
         {title}
+
       </h2>
 
       <p className="mt-1 text-sm text-slate-400">
         {description}
       </p>
 
-      <div className="mt-5 space-y-3">
+      <div className="mt-5">
 
-        {rows.length === 0 ? (
+        {rows.length ===
+        0 ? (
+
           <p className="text-sm text-slate-500">
-            Sin jugadores priorizados.
+            Sin jugadores
+            priorizados.
           </p>
+
         ) : (
+
           rows.map(
             (
               row,
               index
             ) => (
+
               <PlayerRow
                 key={
                   row.player_id
@@ -512,13 +868,17 @@ function RankingCard({
                 index={
                   index + 1
                 }
-                row={row}
+                row={
+                  row
+                }
                 value={
                   row[field]
                 }
               />
+
             )
           )
+
         )}
 
       </div>
@@ -527,103 +887,126 @@ function RankingCard({
   );
 }
 
+/* =========================================================
+   PLAYER ROW
+========================================================= */
+
 function PlayerRow({
   row,
   value,
   index,
 }: {
   row: DashboardRow;
+
   value:
     | number
     | null;
+
   index: number;
 }) {
   const player =
     row.players;
 
-  if (!player) {
+  if (
+    !player ||
+    player.active !==
+      true
+  ) {
     return null;
   }
+
+  const safeScore =
+    Math.max(
+      0,
+      Math.min(
+        10,
+        Number(
+          value ??
+            0
+        )
+      )
+    );
 
   return (
     <a
       href={`/players/${player.id}`}
-      className="flex items-center justify-between gap-4 rounded-xl border border-slate-800 p-4 hover:bg-slate-900"
+      className="player-rank-row"
     >
 
-      <div className="flex min-w-0 gap-4">
+      <div className="rank-number">
+        {index}
+      </div>
 
-        <div className="text-xl font-black text-slate-500">
-          {index}
+      <div className="rank-main">
+
+        <div className="rank-name">
+          {player.full_name}
         </div>
 
-        <div className="min-w-0">
+        <div className="rank-meta">
 
-          <div className="truncate font-bold">
-            {
-              player.full_name
-            }
-          </div>
+          {player.position}
 
-          <div className="mt-1 text-xs text-slate-500">
+          {player.height_cm &&
+            ` · ${player.height_cm} cm`}
 
-            {player.position}
+          {" · "}
 
-            {player.height_cm &&
-              ` · ${player.height_cm} cm`}
+          {row.reports_count}{" "}
+          informe
 
-            {" · "}
+          {row.reports_count ===
+          1
+            ? ""
+            : "s"}
 
-            {
-              row.reports_count
-            }{" "}
-            informe{
-              row.reports_count ===
-              1
-                ? ""
-                : "s"
-            }
+        </div>
 
-          </div>
+        <div className="rank-meta">
 
-          <div className="mt-1 text-xs text-slate-600">
+          Current{" "}
 
-            Current{" "}
-            {formatScore(
-              row.current_level_score
-            )}
+          {formatScore(
+            row.current_level_score
+          )}
 
-            {" · "}
+          {" · "}
 
-            Potential{" "}
-            {formatScore(
-              row.potential_score
-            )}
+          Potential{" "}
 
-            {" · "}
+          {formatScore(
+            row.potential_score
+          )}
 
-            {
-              evidenceLabel(
-                row.evidence_level
-              )
-            }
+          {" · "}
 
-          </div>
+          {evidenceLabel(
+            row.evidence_level
+          )}
 
         </div>
 
       </div>
 
-      <div className="text-right">
+      <div className="rank-score">
 
-        <div className="text-2xl font-black">
-          {formatScore(
-            value
-          )}
-        </div>
+        {formatScore(
+          value
+        )}
 
-        <div className="text-xs text-slate-500">
+        <small>
           /10
+        </small>
+
+        <div className="score-bar">
+
+          <span
+            style={{
+              width:
+                `${safeScore * 10}%`,
+            }}
+          />
+
         </div>
 
       </div>
