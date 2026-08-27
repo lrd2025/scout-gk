@@ -27,7 +27,6 @@ export const dynamic =
 ========================================================= */
 
 const supabaseUrl =
-  process.env.SUPABASE_URL ||
   process.env.NEXT_PUBLIC_SUPABASE_URL;
 
 const serviceRoleKey =
@@ -97,11 +96,8 @@ function validatePassword(
 ========================================================= */
 
 function secureCompare(
-  received:
-    string,
-
-  expected:
-    string
+  received: string,
+  expected: string
 ) {
   const receivedBuffer =
     Buffer.from(
@@ -138,20 +134,43 @@ export async function POST(
   try {
 
     /* =====================================================
-       1. CONFIGURACIÓN DEL SERVIDOR
+       1. VALIDAR CONFIGURACIÓN
     ===================================================== */
 
     if (
       !supabaseUrl
     ) {
       console.error(
-        "SUPABASE_URL no configurada."
+        "NEXT_PUBLIC_SUPABASE_URL no configurada."
       );
 
       return NextResponse.json(
         {
           error:
-            "Configuración del servidor incompleta.",
+            "La URL de Supabase no está configurada en el servidor.",
+        },
+        {
+          status: 500,
+        }
+      );
+    }
+
+    if (
+      !supabaseUrl.startsWith(
+        "https://"
+      ) &&
+      !supabaseUrl.startsWith(
+        "http://"
+      )
+    ) {
+      console.error(
+        "NEXT_PUBLIC_SUPABASE_URL inválida."
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            "La URL de Supabase configurada no es válida.",
         },
         {
           status: 500,
@@ -169,7 +188,7 @@ export async function POST(
       return NextResponse.json(
         {
           error:
-            "Configuración del servidor incompleta.",
+            "La clave administrativa de Supabase no está configurada.",
         },
         {
           status: 500,
@@ -235,7 +254,7 @@ export async function POST(
       ).trim();
 
     /* =====================================================
-       3. VALIDACIONES
+       3. VALIDACIONES DE CAMPOS
     ===================================================== */
 
     if (
@@ -342,7 +361,7 @@ export async function POST(
     }
 
     /* =====================================================
-       5. CLIENTE ADMINISTRADOR
+       5. CLIENTE ADMIN SUPABASE
     ===================================================== */
 
     const admin =
@@ -375,12 +394,9 @@ export async function POST(
         .createUser(
           {
             email,
+
             password,
 
-            /*
-             * Al usar registro institucional,
-             * habilitamos el correo directamente.
-             */
             email_confirm:
               true,
 
@@ -412,6 +428,9 @@ export async function POST(
         ) ||
         lowerMessage.includes(
           "registered"
+        ) ||
+        lowerMessage.includes(
+          "exists"
         )
       ) {
         return NextResponse.json(
@@ -428,6 +447,7 @@ export async function POST(
       return NextResponse.json(
         {
           error:
+            createUserError.message ||
             "No fue posible crear la cuenta.",
         },
         {
@@ -502,7 +522,7 @@ export async function POST(
       profileError
     ) {
       console.error(
-        "Error creando profile:",
+        "Error creando perfil:",
         profileError
       );
 
@@ -514,6 +534,7 @@ export async function POST(
       return NextResponse.json(
         {
           error:
+            profileError.message ||
             "La cuenta no pudo completarse y fue cancelada.",
         },
         {
@@ -523,7 +544,7 @@ export async function POST(
     }
 
     /* =====================================================
-       9. RESPUESTA
+       9. RESPUESTA OK
     ===================================================== */
 
     return NextResponse.json(
@@ -559,10 +580,16 @@ export async function POST(
       error
     );
 
+    const message =
+      error instanceof
+        Error
+        ? error.message
+        : "Error desconocido.";
+
     return NextResponse.json(
       {
         error:
-          "Se produjo un error inesperado al crear la cuenta.",
+          `Error del servidor: ${message}`,
       },
       {
         status: 500,
