@@ -48,7 +48,16 @@ function formatDate(
     return "Sin registro";
   }
 
-  return date.toLocaleString("es-AR");
+  return date.toLocaleString(
+    "es-AR",
+    {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }
+  );
 }
 
 /* =========================================================
@@ -59,14 +68,16 @@ export default function AdminUsersPage() {
   const {
     profile,
     loading: profileLoading,
-    can,
   } = useCurrentUser();
 
   const [users, setUsers] =
     useState<PlatformUser[]>([]);
 
   const [loading, setLoading] =
-    useState(true);
+    useState(false);
+
+  const [initialized, setInitialized] =
+    useState(false);
 
   const [search, setSearch] =
     useState("");
@@ -85,132 +96,231 @@ export default function AdminUsersPage() {
   ======================================================= */
 
   async function getAccessToken() {
-    const { data } =
-      await supabase.auth.getSession();
+    const {
+      data,
+      error,
+    } =
+      await supabase.auth
+        .getSession();
 
-    return data.session?.access_token ?? null;
+    if (error) {
+      throw new Error(
+        error.message
+      );
+    }
+
+    return (
+      data.session
+        ?.access_token ??
+      null
+    );
   }
 
   /* =======================================================
      CARGAR USUARIOS
   ======================================================= */
 
-  const loadUsers = useCallback(
-    async () => {
-      setLoading(true);
-      setError("");
+  const loadUsers =
+    useCallback(
+      async () => {
+        setLoading(true);
 
-      try {
-        const { data } =
-          await supabase.auth.getSession();
+        setError("");
 
-        const token =
-          data.session?.access_token;
+        try {
+          const {
+            data,
+            error:
+              sessionError,
+          } =
+            await supabase.auth
+              .getSession();
 
-        if (!token) {
-          throw new Error(
-            "No hay una sesión activa."
+          if (
+            sessionError
+          ) {
+            throw new Error(
+              sessionError.message
+            );
+          }
+
+          const token =
+            data.session
+              ?.access_token;
+
+          if (!token) {
+            throw new Error(
+              "No hay una sesión activa."
+            );
+          }
+
+          const response =
+            await fetch(
+              "/api/admin/users",
+              {
+                method:
+                  "GET",
+
+                headers: {
+                  Authorization:
+                    `Bearer ${token}`,
+                },
+
+                cache:
+                  "no-store",
+              }
+            );
+
+          const result =
+            await response.json();
+
+          if (
+            !response.ok
+          ) {
+            throw new Error(
+              result.error ||
+                "No se pudieron cargar los usuarios."
+            );
+          }
+
+          const receivedUsers =
+            Array.isArray(
+              result.users
+            )
+              ? result.users
+              : [];
+
+          setUsers(
+            receivedUsers
+          );
+        } catch (
+          err
+        ) {
+          console.error(
+            "Error cargando usuarios:",
+            err
+          );
+
+          setUsers(
+            []
+          );
+
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Error cargando usuarios."
+          );
+        } finally {
+          setLoading(
+            false
+          );
+
+          setInitialized(
+            true
           );
         }
-
-        const response =
-          await fetch(
-            "/api/admin/users",
-            {
-              method: "GET",
-
-              headers: {
-                Authorization:
-                  `Bearer ${token}`,
-              },
-
-              cache: "no-store",
-            }
-          );
-
-        const result =
-          await response.json();
-
-        if (!response.ok) {
-          throw new Error(
-            result.error ||
-              "No se pudieron cargar los usuarios."
-          );
-        }
-
-        setUsers(
-          Array.isArray(result.users)
-            ? result.users
-            : []
-        );
-      } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Error cargando usuarios."
-        );
-      } finally {
-        setLoading(false);
-      }
-    },
-    []
-  );
+      },
+      []
+    );
 
   /* =======================================================
-     INICIALIZAR
+     CARGA INICIAL
   ======================================================= */
 
-  useEffect(() => {
-    if (profileLoading) {
-      return;
-    }
+  useEffect(
+    () => {
+      if (
+        profileLoading
+      ) {
+        return;
+      }
 
-    if (!profile) {
-      setLoading(false);
-      return;
-    }
+      if (!profile) {
+        setInitialized(
+          true
+        );
 
-    if (!can("users:view")) {
-      setLoading(false);
-      return;
-    }
+        return;
+      }
 
-    loadUsers();
-  }, [
-    profileLoading,
-    profile,
-    can,
-    loadUsers,
-  ]);
+      if (
+        profile.role !==
+        "ADMIN"
+      ) {
+        setInitialized(
+          true
+        );
+
+        return;
+      }
+
+      loadUsers();
+    },
+    [
+      profileLoading,
+      profile?.id,
+      profile?.role,
+      loadUsers,
+    ]
+  );
 
   /* =======================================================
      FILTRAR USUARIOS
   ======================================================= */
 
   const filteredUsers =
-    useMemo(() => {
-      const term =
-        search
-          .trim()
-          .toLowerCase();
+    useMemo(
+      () => {
+        const term =
+          search
+            .trim()
+            .toLowerCase();
 
-      if (!term) {
-        return users;
-      }
+        if (!term) {
+          return users;
+        }
 
-      return users.filter(
-        (user) =>
-          (user.full_name || "")
-            .toLowerCase()
-            .includes(term) ||
-          (user.email || "")
-            .toLowerCase()
-            .includes(term) ||
-          (user.role || "")
-            .toLowerCase()
-            .includes(term)
-      );
-    }, [users, search]);
+        return users.filter(
+          (
+            user
+          ) => {
+            const name =
+              (
+                user.full_name ||
+                ""
+              ).toLowerCase();
+
+            const email =
+              (
+                user.email ||
+                ""
+              ).toLowerCase();
+
+            const role =
+              (
+                user.role ||
+                ""
+              ).toLowerCase();
+
+            return (
+              name.includes(
+                term
+              ) ||
+              email.includes(
+                term
+              ) ||
+              role.includes(
+                term
+              )
+            );
+          }
+        );
+      },
+      [
+        users,
+        search,
+      ]
+    );
 
   /* =======================================================
      ACTUALIZAR USUARIO
@@ -223,8 +333,12 @@ export default function AdminUsersPage() {
       active?: boolean;
     }
   ) {
-    setSavingId(userId);
+    setSavingId(
+      userId
+    );
+
     setError("");
+
     setMessage("");
 
     try {
@@ -241,7 +355,8 @@ export default function AdminUsersPage() {
         await fetch(
           "/api/admin/users",
           {
-            method: "PATCH",
+            method:
+              "PATCH",
 
             headers: {
               "Content-Type":
@@ -251,17 +366,20 @@ export default function AdminUsersPage() {
                 `Bearer ${token}`,
             },
 
-            body: JSON.stringify({
-              userId,
-              ...changes,
-            }),
+            body:
+              JSON.stringify({
+                userId,
+                ...changes,
+              }),
           }
         );
 
       const result =
         await response.json();
 
-      if (!response.ok) {
+      if (
+        !response.ok
+      ) {
         throw new Error(
           result.error ||
             "No se pudo actualizar el usuario."
@@ -273,14 +391,23 @@ export default function AdminUsersPage() {
       );
 
       await loadUsers();
-    } catch (err) {
+    } catch (
+      err
+    ) {
+      console.error(
+        "Error actualizando usuario:",
+        err
+      );
+
       setError(
         err instanceof Error
           ? err.message
           : "No se pudo actualizar el usuario."
       );
     } finally {
-      setSavingId(null);
+      setSavingId(
+        null
+      );
     }
   }
 
@@ -289,19 +416,27 @@ export default function AdminUsersPage() {
   ======================================================= */
 
   async function changeRole(
-    user: PlatformUser,
-    role: UserRole
+    user:
+      PlatformUser,
+    role:
+      UserRole
   ) {
-    if (user.id === profile?.id) {
+    if (
+      user.id ===
+      profile?.id
+    ) {
       setError(
         "Por seguridad, no podés modificar tu propio rol desde este panel."
       );
+
       return;
     }
 
     await updateUser(
       user.id,
-      { role }
+      {
+        role,
+      }
     );
   }
 
@@ -310,19 +445,25 @@ export default function AdminUsersPage() {
   ======================================================= */
 
   async function toggleActive(
-    user: PlatformUser
+    user:
+      PlatformUser
   ) {
-    if (user.id === profile?.id) {
+    if (
+      user.id ===
+      profile?.id
+    ) {
       setError(
         "No podés desactivar tu propia cuenta."
       );
+
       return;
     }
 
     await updateUser(
       user.id,
       {
-        active: !user.active,
+        active:
+          !user.active,
       }
     );
   }
@@ -331,7 +472,9 @@ export default function AdminUsersPage() {
      CARGANDO PERFIL
   ======================================================= */
 
-  if (profileLoading) {
+  if (
+    profileLoading
+  ) {
     return (
       <div className="card">
         Verificando permisos...
@@ -346,6 +489,7 @@ export default function AdminUsersPage() {
   if (!profile) {
     return (
       <div className="mx-auto max-w-3xl">
+
         <div className="card">
 
           <h1 className="text-2xl font-black">
@@ -364,6 +508,7 @@ export default function AdminUsersPage() {
           </a>
 
         </div>
+
       </div>
     );
   }
@@ -372,9 +517,13 @@ export default function AdminUsersPage() {
      SIN PERMISOS
   ======================================================= */
 
-  if (!can("users:view")) {
+  if (
+    profile.role !==
+    "ADMIN"
+  ) {
     return (
       <div className="mx-auto max-w-3xl">
+
         <div className="card">
 
           <div className="text-sm font-bold uppercase tracking-wider text-red-400">
@@ -397,6 +546,7 @@ export default function AdminUsersPage() {
           </a>
 
         </div>
+
       </div>
     );
   }
@@ -423,7 +573,7 @@ export default function AdminUsersPage() {
           </h1>
 
           <p className="mt-2 text-sm text-slate-400">
-            Gestioná los usuarios, roles y accesos a la plataforma.
+            Gestión de usuarios, roles y accesos a la plataforma.
           </p>
 
         </div>
@@ -439,34 +589,41 @@ export default function AdminUsersPage() {
           </span>
 
           <span className="ml-2 text-slate-500">
-            · {roleLabel(profile.role)}
+            ·{" "}
+            {roleLabel(
+              profile.role
+            )}
           </span>
 
         </div>
 
       </div>
 
-      {/* MENSAJE DE ERROR */}
+      {/* ERROR */}
 
       {error && (
         <div className="rounded-xl border border-red-900 bg-red-950/20 p-4 text-sm text-red-300">
+
           {error}
+
         </div>
       )}
 
-      {/* MENSAJE DE ÉXITO */}
+      {/* ÉXITO */}
 
       {message && (
         <div className="rounded-xl border border-emerald-800 bg-emerald-950/20 p-4 text-sm text-emerald-300">
+
           {message}
+
         </div>
       )}
 
-      {/* BUSCADOR */}
+      {/* RESUMEN + BUSCADOR */}
 
       <section className="card">
 
-        <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-5">
 
           <div>
 
@@ -475,23 +632,32 @@ export default function AdminUsersPage() {
             </h2>
 
             <p className="mt-1 text-sm text-slate-500">
+
               {users.length}{" "}
-              {users.length === 1
+
+              {users.length ===
+              1
                 ? "usuario"
                 : "usuarios"}{" "}
+
               registrados en Scout GK.
+
             </p>
 
           </div>
 
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap items-center gap-3">
 
             <input
               type="search"
-              className="input min-w-[260px]"
+              className="input min-w-[300px]"
               placeholder="Buscar por nombre, correo o rol..."
-              value={search}
-              onChange={(event) =>
+              value={
+                search
+              }
+              onChange={(
+                event
+              ) =>
                 setSearch(
                   event.target.value
                 )
@@ -500,10 +666,17 @@ export default function AdminUsersPage() {
 
             <button
               type="button"
-              onClick={loadUsers}
-              className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-bold hover:border-slate-500"
+              onClick={
+                loadUsers
+              }
+              disabled={
+                loading
+              }
+              className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-bold hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Actualizar
+              {loading
+                ? "Actualizando..."
+                : "Actualizar"}
             </button>
 
           </div>
@@ -516,21 +689,39 @@ export default function AdminUsersPage() {
 
       <section className="card overflow-x-auto">
 
-        {loading ? (
+        {!initialized ||
+        loading ? (
 
-          <div className="py-12 text-center text-slate-400">
-            Cargando usuarios...
+          <div className="py-12 text-center">
+
+            <div className="text-sm font-bold text-slate-300">
+              Cargando usuarios...
+            </div>
+
+            <div className="mt-2 text-xs text-slate-500">
+              Consultando perfiles y permisos.
+            </div>
+
           </div>
 
-        ) : filteredUsers.length === 0 ? (
+        ) : filteredUsers.length ===
+          0 ? (
 
-          <div className="py-12 text-center text-slate-400">
-            No se encontraron usuarios.
+          <div className="py-12 text-center">
+
+            <div className="font-bold">
+              No se encontraron usuarios
+            </div>
+
+            <div className="mt-2 text-sm text-slate-500">
+              Probá modificando el criterio de búsqueda.
+            </div>
+
           </div>
 
         ) : (
 
-          <table className="w-full min-w-[1000px] text-left text-sm">
+          <table className="w-full min-w-[1050px] text-left text-sm">
 
             <thead>
 
@@ -571,7 +762,9 @@ export default function AdminUsersPage() {
             <tbody>
 
               {filteredUsers.map(
-                (user) => {
+                (
+                  user
+                ) => {
 
                   const isSelf =
                     user.id ===
@@ -583,7 +776,9 @@ export default function AdminUsersPage() {
 
                   return (
                     <tr
-                      key={user.id}
+                      key={
+                        user.id
+                      }
                       className="border-b border-slate-900 last:border-0"
                     >
 
@@ -593,25 +788,33 @@ export default function AdminUsersPage() {
 
                         <div className="flex items-center gap-3">
 
-                          <div className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-700 bg-slate-900 font-black">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-700 bg-slate-900 font-black">
 
-                            {user.full_name
-                              ?.charAt(0)
-                              .toUpperCase() ||
-                              "U"}
+                            {(
+                              user.full_name ||
+                              user.email ||
+                              "U"
+                            )
+                              .charAt(
+                                0
+                              )
+                              .toUpperCase()}
 
                           </div>
 
                           <div>
 
                             <div className="font-bold">
-                              {user.full_name}
+                              {user.full_name ||
+                                "Usuario"}
                             </div>
 
                             {isSelf && (
-                              <div className="mt-1 text-xs text-slate-500">
+
+                              <div className="mt-1 text-xs font-semibold text-slate-500">
                                 Tu cuenta
                               </div>
+
                             )}
 
                           </div>
@@ -620,10 +823,12 @@ export default function AdminUsersPage() {
 
                       </td>
 
-                      {/* CORREO */}
+                      {/* EMAIL */}
 
                       <td className="px-3 py-4 text-slate-300">
+
                         {user.email}
+
                       </td>
 
                       {/* ROL */}
@@ -631,15 +836,20 @@ export default function AdminUsersPage() {
                       <td className="px-3 py-4">
 
                         <select
-                          value={user.role}
+                          value={
+                            user.role
+                          }
                           disabled={
                             isSaving ||
                             isSelf
                           }
-                          onChange={(event) =>
+                          onChange={(
+                            event
+                          ) =>
                             changeRole(
                               user,
-                              event.target
+                              event
+                                .target
                                 .value as UserRole
                             )
                           }
@@ -669,10 +879,14 @@ export default function AdminUsersPage() {
                         <span
                           className={
                             user.active
-                              ? "inline-flex rounded-full border border-emerald-800 bg-emerald-950/30 px-3 py-1 text-xs font-bold text-emerald-300"
-                              : "inline-flex rounded-full border border-red-900 bg-red-950/30 px-3 py-1 text-xs font-bold text-red-300"
+                              ? "inline-flex items-center gap-2 rounded-full border border-emerald-800 bg-emerald-950/30 px-3 py-1 text-xs font-bold text-emerald-300"
+                              : "inline-flex items-center gap-2 rounded-full border border-red-900 bg-red-950/30 px-3 py-1 text-xs font-bold text-red-300"
                           }
                         >
+
+                          <span>
+                            ●
+                          </span>
 
                           {user.active
                             ? "Activa"
@@ -682,49 +896,64 @@ export default function AdminUsersPage() {
 
                       </td>
 
-                      {/* FECHA DE ALTA */}
+                      {/* FECHA ALTA */}
 
                       <td className="px-3 py-4 text-xs text-slate-400">
+
                         {formatDate(
                           user.created_at
                         )}
+
                       </td>
 
                       {/* ÚLTIMO ACCESO */}
 
                       <td className="px-3 py-4 text-xs text-slate-400">
+
                         {formatDate(
                           user.last_login_at
                         )}
+
                       </td>
 
                       {/* ACCIONES */}
 
                       <td className="px-3 py-4 text-right">
 
-                        <button
-                          type="button"
-                          disabled={
-                            isSaving ||
-                            isSelf
-                          }
-                          onClick={() =>
-                            toggleActive(user)
-                          }
-                          className={
-                            user.active
-                              ? "rounded-lg border border-red-900 px-3 py-2 text-xs font-bold text-red-300 hover:bg-red-950/30 disabled:cursor-not-allowed disabled:opacity-40"
-                              : "rounded-lg border border-emerald-800 px-3 py-2 text-xs font-bold text-emerald-300 hover:bg-emerald-950/30 disabled:cursor-not-allowed disabled:opacity-40"
-                          }
-                        >
+                        {isSelf ? (
 
-                          {isSaving
-                            ? "Guardando..."
-                            : user.active
-                            ? "Desactivar"
-                            : "Activar"}
+                          <span className="text-xs text-slate-500">
+                            Cuenta protegida
+                          </span>
 
-                        </button>
+                        ) : (
+
+                          <button
+                            type="button"
+                            disabled={
+                              isSaving
+                            }
+                            onClick={() =>
+                              toggleActive(
+                                user
+                              )
+                            }
+                            className={
+                              user.active
+                                ? "rounded-lg border border-red-900 px-3 py-2 text-xs font-bold text-red-300 hover:bg-red-950/30 disabled:cursor-not-allowed disabled:opacity-40"
+                                : "rounded-lg border border-emerald-800 px-3 py-2 text-xs font-bold text-emerald-300 hover:bg-emerald-950/30 disabled:cursor-not-allowed disabled:opacity-40"
+                            }
+                          >
+
+                            {isSaving
+                              ? "Guardando..."
+                              : user.active
+                              ? "Desactivar"
+                              : "Activar"}
+
+                          </button>
+
+                        )}
 
                       </td>
 
@@ -741,7 +970,7 @@ export default function AdminUsersPage() {
 
       </section>
 
-      {/* DESCRIPCIÓN DE ROLES */}
+      {/* REFERENCIA DE ROLES */}
 
       <section className="grid gap-4 md:grid-cols-3">
 
