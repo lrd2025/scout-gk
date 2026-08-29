@@ -9,31 +9,40 @@ export type UserRole =
   | "VIEWER";
 
 export type Permission =
+  /* DASHBOARD */
   | "dashboard:view"
 
+  /* JUGADORES */
   | "players:view"
   | "players:create"
   | "players:edit"
   | "players:delete"
 
+  /* VIDEOS */
   | "videos:view"
   | "videos:create"
   | "videos:edit"
   | "videos:delete"
 
+  /* ANÁLISIS */
   | "analysis:view"
   | "analysis:create"
   | "analysis:validate"
 
+  /* INFORMES */
   | "reports:view"
   | "reports:create"
   | "reports:edit"
+  | "reports:delete"
 
+  /* COMPARACIÓN */
   | "compare:view"
 
+  /* PERFIL */
   | "profile:view"
   | "profile:edit"
 
+  /* USUARIOS */
   | "users:view"
   | "users:manage";
 
@@ -45,6 +54,10 @@ const ROLE_PERMISSIONS: Record<
   UserRole,
   Permission[]
 > = {
+  /* =======================================================
+     ADMINISTRADOR
+  ======================================================= */
+
   ADMIN: [
     "dashboard:view",
 
@@ -65,6 +78,7 @@ const ROLE_PERMISSIONS: Record<
     "reports:view",
     "reports:create",
     "reports:edit",
+    "reports:delete",
 
     "compare:view",
 
@@ -74,6 +88,10 @@ const ROLE_PERMISSIONS: Record<
     "users:view",
     "users:manage",
   ],
+
+  /* =======================================================
+     SCOUT
+  ======================================================= */
 
   SCOUT: [
     "dashboard:view",
@@ -99,6 +117,10 @@ const ROLE_PERMISSIONS: Record<
     "profile:view",
     "profile:edit",
   ],
+
+  /* =======================================================
+     CONSULTA
+  ======================================================= */
 
   VIEWER: [
     "dashboard:view",
@@ -143,7 +165,7 @@ export function hasPermission(
 }
 
 /* =========================================================
-   NOMBRE DEL ROL
+   ETIQUETA DEL ROL
 ========================================================= */
 
 export function roleLabel(
@@ -179,15 +201,36 @@ export function roleDescription(
 ) {
   switch (role) {
     case "ADMIN":
-      return "Administración general de Scout GK, incluyendo usuarios, roles, jugadores, videos, análisis e informes.";
+      return "Control general de la plataforma. Puede gestionar usuarios, roles, jugadores, videos, análisis e informes.";
 
     case "SCOUT":
-      return "Puede registrar y evaluar jugadores, cargar videos, generar informes y validar análisis de scouting.";
+      return "Puede registrar y editar jugadores, cargar videos, realizar análisis y generar informes de scouting.";
 
     case "VIEWER":
-      return "Perfil de consulta. Puede acceder a información y evaluaciones, sin modificar contenido de scouting.";
+      return "Perfil de consulta. Puede acceder a jugadores, videos, informes y comparaciones sin modificar información.";
 
     default:
-      return "No hay un rol institucional asignado.";
+      return "No hay un rol asignado.";
   }
+}
+
+/* =========================================================
+   LISTA DE PERMISOS DE UN ROL
+========================================================= */
+
+export function permissionsForRole(
+  role:
+    | UserRole
+    | null
+    | undefined
+): Permission[] {
+  if (!role) {
+    return [];
+  }
+
+  return [
+    ...(ROLE_PERMISSIONS[
+      role
+    ] ?? []),
+  ];
 }
