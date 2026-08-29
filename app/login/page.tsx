@@ -29,101 +29,68 @@ type MessageType =
 ========================================================= */
 
 export default function LoginPage() {
-  const [
-    mode,
-    setMode,
-  ] =
-    useState<Mode>(
-      "login"
-    );
+  const [mode, setMode] =
+    useState<Mode>("login");
 
-  const [
-    fullName,
-    setFullName,
-  ] =
+  const [fullName, setFullName] =
     useState("");
 
-  const [
-    email,
-    setEmail,
-  ] =
+  const [email, setEmail] =
     useState("");
 
-  const [
-    password,
-    setPassword,
-  ] =
+  const [password, setPassword] =
     useState("");
 
   const [
     confirmPassword,
     setConfirmPassword,
-  ] =
-    useState("");
+  ] = useState("");
 
   const [
     institutionalKey,
     setInstitutionalKey,
-  ] =
-    useState("");
+  ] = useState("");
 
   const [
     showPassword,
     setShowPassword,
-  ] =
+  ] = useState(false);
+
+  const [loading, setLoading] =
     useState(false);
 
-  const [
-    loading,
-    setLoading,
-  ] =
-    useState(false);
-
-  const [
-    message,
-    setMessage,
-  ] =
+  const [message, setMessage] =
     useState("");
 
   const [
     messageType,
     setMessageType,
-  ] =
-    useState<MessageType>(
-      ""
-    );
+  ] = useState<MessageType>("");
 
   const [
     sessionEmail,
     setSessionEmail,
-  ] =
-    useState<
-      string | null
-    >(null);
+  ] = useState<string | null>(
+    null
+  );
 
   /* =======================================================
      SESIÓN ACTUAL
   ======================================================= */
 
   useEffect(() => {
-
     supabase.auth
       .getSession()
-      .then(
-        ({
-          data,
-        }) => {
-          setSessionEmail(
-            data.session
-              ?.user.email ??
+      .then(({ data }) => {
+        setSessionEmail(
+          data.session
+            ?.user.email ??
             null
-          );
-        }
-      );
+        );
+      });
 
     const {
-      data:
-        authListener,
+      data: authListener,
     } =
       supabase.auth
         .onAuthStateChange(
@@ -134,7 +101,7 @@ export default function LoginPage() {
             setSessionEmail(
               session
                 ?.user.email ??
-              null
+                null
             );
           }
         );
@@ -144,40 +111,23 @@ export default function LoginPage() {
         .subscription
         .unsubscribe();
     };
-
   }, []);
 
   /* =======================================================
-     CAMBIAR ENTRE LOGIN / REGISTRO
+     CAMBIAR LOGIN / REGISTRO
   ======================================================= */
 
   function changeMode(
-    nextMode:
-      Mode
+    nextMode: Mode
   ) {
-    setMode(
-      nextMode
-    );
+    setMode(nextMode);
 
-    setMessage(
-      ""
-    );
+    setMessage("");
+    setMessageType("");
 
-    setMessageType(
-      ""
-    );
-
-    setPassword(
-      ""
-    );
-
-    setConfirmPassword(
-      ""
-    );
-
-    setInstitutionalKey(
-      ""
-    );
+    setPassword("");
+    setConfirmPassword("");
+    setInstitutionalKey("");
   }
 
   /* =======================================================
@@ -190,42 +140,31 @@ export default function LoginPage() {
         .trim()
         .toLowerCase();
 
-    if (
-      !normalizedEmail
-    ) {
+    if (!normalizedEmail) {
       throw new Error(
         "Ingresá tu correo electrónico."
       );
     }
 
-    if (
-      !password
-    ) {
+    if (!password) {
       throw new Error(
         "Ingresá tu contraseña."
       );
     }
 
     const {
-      data:
-        loginData,
-
-      error:
-        loginError,
+      data: loginData,
+      error: loginError,
     } =
       await supabase.auth
-        .signInWithPassword(
-          {
-            email:
-              normalizedEmail,
+        .signInWithPassword({
+          email:
+            normalizedEmail,
 
-            password,
-          }
-        );
+          password,
+        });
 
-    if (
-      loginError
-    ) {
+    if (loginError) {
       throw new Error(
         "Correo electrónico o contraseña incorrectos."
       );
@@ -234,9 +173,7 @@ export default function LoginPage() {
     const user =
       loginData.user;
 
-    if (
-      !user
-    ) {
+    if (!user) {
       throw new Error(
         "No fue posible iniciar sesión."
       );
@@ -247,16 +184,11 @@ export default function LoginPage() {
     ===================================================== */
 
     const {
-      data:
-        profile,
-
-      error:
-        profileError,
+      data: profile,
+      error: profileError,
     } =
       await supabase
-        .from(
-          "profiles"
-        )
+        .from("profiles")
         .select(`
           id,
           full_name,
@@ -274,6 +206,7 @@ export default function LoginPage() {
      * Permitimos temporalmente cuentas antiguas
      * que todavía no tengan profiles.
      */
+
     if (
       !profileError &&
       profile &&
@@ -292,13 +225,9 @@ export default function LoginPage() {
        ACTUALIZAR ÚLTIMO INGRESO
     ===================================================== */
 
-    if (
-      profile
-    ) {
+    if (profile) {
       await supabase
-        .from(
-          "profiles"
-        )
+        .from("profiles")
         .update({
           last_login_at:
             new Date()
@@ -326,17 +255,14 @@ export default function LoginPage() {
     if (
       fullName
         .trim()
-        .length <
-      3
+        .length < 3
     ) {
       throw new Error(
         "Ingresá nombre y apellido."
       );
     }
 
-    if (
-      !email.trim()
-    ) {
+    if (!email.trim()) {
       throw new Error(
         "Ingresá un correo electrónico."
       );
@@ -352,8 +278,7 @@ export default function LoginPage() {
     }
 
     if (
-      password.length <
-      8
+      password.length < 8
     ) {
       throw new Error(
         "La contraseña debe contener al menos 8 caracteres."
@@ -436,9 +361,7 @@ export default function LoginPage() {
     const result =
       await response.json();
 
-    if (
-      !response.ok
-    ) {
+    if (!response.ok) {
       throw new Error(
         result.error ||
           "No fue posible crear la cuenta."
@@ -453,26 +376,11 @@ export default function LoginPage() {
       "Cuenta creada correctamente. Ya podés iniciar sesión."
     );
 
-    setFullName(
-      ""
-    );
+    setFullName("");
+    setPassword("");
+    setConfirmPassword("");
+    setInstitutionalKey("");
 
-    setPassword(
-      ""
-    );
-
-    setConfirmPassword(
-      ""
-    );
-
-    setInstitutionalKey(
-      ""
-    );
-
-    /*
-     * Volvemos al login después
-     * de mostrar confirmación.
-     */
     window.setTimeout(
       () => {
         setMode(
@@ -501,20 +409,11 @@ export default function LoginPage() {
   ) {
     event.preventDefault();
 
-    setLoading(
-      true
-    );
-
-    setMessage(
-      ""
-    );
-
-    setMessageType(
-      ""
-    );
+    setLoading(true);
+    setMessage("");
+    setMessageType("");
 
     try {
-
       if (
         mode ===
         "login"
@@ -523,10 +422,7 @@ export default function LoginPage() {
       } else {
         await register();
       }
-
-    } catch (
-      error
-    ) {
+    } catch (error) {
       console.error(
         error
       );
@@ -536,18 +432,14 @@ export default function LoginPage() {
       );
 
       setMessage(
-        error instanceof
-          Error
+        error instanceof Error
           ? error.message
           : "Se produjo un error."
       );
-
     } finally {
-
       setLoading(
         false
       );
-
     }
   }
 
@@ -576,9 +468,7 @@ export default function LoginPage() {
      SESIÓN ACTIVA
   ======================================================= */
 
-  if (
-    sessionEmail
-  ) {
+  if (sessionEmail) {
     return (
       <div className="mx-auto max-w-xl">
 
@@ -618,9 +508,7 @@ export default function LoginPage() {
 
             <button
               type="button"
-              onClick={
-                logout
-              }
+              onClick={logout}
               className="rounded-lg border border-red-900/70 px-4 py-2 font-bold text-red-300 transition hover:border-red-700 hover:bg-red-950/30"
             >
               Cerrar sesión
@@ -673,8 +561,7 @@ export default function LoginPage() {
               )
             }
             className={
-              mode ===
-              "login"
+              mode === "login"
                 ? "rounded-lg bg-white px-4 py-3 text-sm font-black text-slate-950"
                 : "rounded-lg px-4 py-3 text-sm font-bold text-slate-400 hover:text-white"
             }
@@ -690,8 +577,7 @@ export default function LoginPage() {
               )
             }
             className={
-              mode ===
-              "signup"
+              mode === "signup"
                 ? "rounded-lg bg-white px-4 py-3 text-sm font-black text-slate-950"
                 : "rounded-lg px-4 py-3 text-sm font-bold text-slate-400 hover:text-white"
             }
@@ -728,9 +614,7 @@ export default function LoginPage() {
         {/* FORM */}
 
         <form
-          onSubmit={
-            handleSubmit
-          }
+          onSubmit={handleSubmit}
           className="mt-6 space-y-5"
         >
 
@@ -750,12 +634,8 @@ export default function LoginPage() {
                 type="text"
                 autoComplete="name"
                 placeholder="Ej. Juan Pérez"
-                value={
-                  fullName
-                }
-                onChange={(
-                  event
-                ) =>
+                value={fullName}
+                onChange={(event) =>
                   setFullName(
                     event.target.value
                   )
@@ -780,12 +660,8 @@ export default function LoginPage() {
               type="email"
               autoComplete="email"
               placeholder="nombre@correo.com"
-              value={
-                email
-              }
-              onChange={(
-                event
-              ) =>
+              value={email}
+              onChange={(event) =>
                 setEmail(
                   event.target.value
                 )
@@ -813,18 +689,13 @@ export default function LoginPage() {
                     : "password"
                 }
                 autoComplete={
-                  mode ===
-                  "login"
+                  mode === "login"
                     ? "current-password"
                     : "new-password"
                 }
                 placeholder="••••••••"
-                value={
-                  password
-                }
-                onChange={(
-                  event
-                ) =>
+                value={password}
+                onChange={(event) =>
                   setPassword(
                     event.target.value
                   )
@@ -836,9 +707,7 @@ export default function LoginPage() {
                 type="button"
                 onClick={() =>
                   setShowPassword(
-                    (
-                      current
-                    ) =>
+                    (current) =>
                       !current
                   )
                 }
@@ -852,6 +721,27 @@ export default function LoginPage() {
               </button>
 
             </div>
+
+            {/* =============================================
+                RECUPERAR CONTRASEÑA
+                SOLO EN MODO LOGIN
+            ============================================= */}
+
+            {mode ===
+              "login" && (
+
+              <div className="mt-3 text-right">
+
+                <a
+                  href="/forgot-password"
+                  className="text-sm font-bold text-slate-400 transition hover:text-white"
+                >
+                  ¿Olvidaste tu contraseña?
+                </a>
+
+              </div>
+
+            )}
 
             {mode ===
               "signup" && (
@@ -888,9 +778,7 @@ export default function LoginPage() {
                 value={
                   confirmPassword
                 }
-                onChange={(
-                  event
-                ) =>
+                onChange={(event) =>
                   setConfirmPassword(
                     event.target.value
                   )
@@ -929,9 +817,7 @@ export default function LoginPage() {
                   value={
                     institutionalKey
                   }
-                  onChange={(
-                    event
-                  ) =>
+                  onChange={(event) =>
                     setInstitutionalKey(
                       event.target.value
                     )
@@ -952,7 +838,7 @@ export default function LoginPage() {
             <div
               className={
                 messageType ===
-                "success"
+                  "success"
                   ? "rounded-lg border border-emerald-800/70 bg-emerald-950/20 p-4 text-sm text-emerald-300"
                   : "rounded-lg border border-red-900/70 bg-red-950/20 p-4 text-sm text-red-300"
               }
@@ -967,9 +853,7 @@ export default function LoginPage() {
           <button
             type="submit"
             className="btn w-full"
-            disabled={
-              loading
-            }
+            disabled={loading}
           >
 
             {loading
