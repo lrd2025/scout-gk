@@ -8,6 +8,10 @@ import {
 
 import { supabase } from "../../lib/supabase";
 
+import {
+  useCurrentUser,
+} from "../../lib/useCurrentUser";
+
 /* =========================================================
    TIPOS
 ========================================================= */
@@ -40,9 +44,10 @@ type Tracking = {
   evidence_level: string | null;
 };
 
-type PlayerView = Player & {
-  tracking?: Tracking | null;
-};
+type PlayerView =
+  Player & {
+    tracking?: Tracking | null;
+  };
 
 /* =========================================================
    HELPERS
@@ -182,6 +187,13 @@ function positionLabel(
 ========================================================= */
 
 export default function PlayersPage() {
+  const {
+    profile,
+    loading: profileLoading,
+    can,
+  } =
+    useCurrentUser();
+
   const [
     players,
     setPlayers,
@@ -237,6 +249,30 @@ export default function PlayersPage() {
     >(null);
 
   /* =======================================================
+     PERMISOS
+  ======================================================= */
+
+  const canViewPlayers =
+    can(
+      "players:view"
+    );
+
+  const canCreatePlayer =
+    can(
+      "players:create"
+    );
+
+  const canEditPlayer =
+    can(
+      "players:edit"
+    );
+
+  const canDeactivatePlayer =
+    can(
+      "players:delete"
+    );
+
+  /* =======================================================
      CARGA INICIAL
   ======================================================= */
 
@@ -246,13 +282,13 @@ export default function PlayersPage() {
 
   async function loadPlayers() {
     setLoading(true);
-
     setErrorMessage("");
 
     const {
       data: authData,
     } =
-      await supabase.auth.getSession();
+      await supabase.auth
+        .getSession();
 
     if (
       !authData.session
@@ -397,16 +433,36 @@ export default function PlayersPage() {
       combined
     );
 
-    setLoading(false);
+    setLoading(
+      false
+    );
   }
 
   /* =======================================================
      BAJA LÓGICA
+     SOLO ADMINISTRADOR
   ======================================================= */
 
   async function deletePlayer(
     player: PlayerView
   ) {
+    /*
+     * Segunda barrera de seguridad en la interfaz.
+     * No alcanza con ocultar el botón.
+     */
+
+    if (
+      !can(
+        "players:delete"
+      )
+    ) {
+      setErrorMessage(
+        "No tenés permisos para quitar jugadores de la base activa."
+      );
+
+      return;
+    }
+
     const reportsCount =
       player.tracking
         ?.reports_count ??
@@ -428,9 +484,7 @@ export default function PlayersPage() {
           `¿Deseás continuar?`
       );
 
-    if (
-      !confirmed
-    ) {
+    if (!confirmed) {
       return;
     }
 
@@ -462,20 +516,14 @@ export default function PlayersPage() {
             player.id
           );
 
-      if (
-        error
-      ) {
+      if (error) {
         throw error;
       }
 
       setPlayers(
-        (
-          current
-        ) =>
+        (current) =>
           current.filter(
-            (
-              item
-            ) =>
+            (item) =>
               item.id !==
               player.id
           )
@@ -499,8 +547,7 @@ export default function PlayersPage() {
         typeof error ===
           "object" &&
         error !== null &&
-        "message" in
-          error
+        "message" in error
       ) {
         const possibleError =
           error as {
@@ -538,9 +585,7 @@ export default function PlayersPage() {
             .toLowerCase();
 
         return players.filter(
-          (
-            player
-          ) => {
+          (player) => {
             const searchText =
               [
                 player.full_name,
@@ -552,9 +597,7 @@ export default function PlayersPage() {
                 .filter(
                   Boolean
                 )
-                .join(
-                  " "
-                )
+                .join(" ")
                 .toLowerCase();
 
             const matchesSearch =
@@ -584,12 +627,31 @@ export default function PlayersPage() {
     );
 
   /* =======================================================
-     ACCESO
+     CARGANDO PERFIL
+  ======================================================= */
+
+  if (
+    profileLoading
+  ) {
+    return (
+      <div className="card">
+
+        <p className="text-sm text-slate-400">
+          Verificando permisos...
+        </p>
+
+      </div>
+    );
+  }
+
+  /* =======================================================
+     ACCESO SIN SESIÓN
   ======================================================= */
 
   if (
     authenticated ===
-    false
+      false ||
+    !profile
   ) {
     return (
       <div className="space-y-6">
@@ -630,6 +692,40 @@ export default function PlayersPage() {
   }
 
   /* =======================================================
+     SIN PERMISO DE CONSULTA
+  ======================================================= */
+
+  if (
+    !canViewPlayers
+  ) {
+    return (
+      <div className="space-y-6">
+
+        <div>
+
+          <h1 className="text-3xl font-black">
+            Jugadores
+          </h1>
+
+        </div>
+
+        <div className="card">
+
+          <h2 className="text-xl font-bold">
+            Acceso restringido
+          </h2>
+
+          <p className="mt-3 text-slate-400">
+            Tu perfil no tiene permisos para consultar la base de jugadores.
+          </p>
+
+        </div>
+
+      </div>
+    );
+  }
+
+  /* =======================================================
      UI
   ======================================================= */
 
@@ -652,12 +748,20 @@ export default function PlayersPage() {
 
         </div>
 
-        <a
-          href="/players/new"
-          className="btn"
-        >
-          + Nuevo jugador
-        </a>
+        {/* NUEVO JUGADOR:
+            ADMIN + SCOUT
+        */}
+
+        {canCreatePlayer && (
+
+          <a
+            href="/players/new"
+            className="btn"
+          >
+            + Nuevo jugador
+          </a>
+
+        )}
 
       </div>
 
@@ -734,12 +838,8 @@ export default function PlayersPage() {
             <input
               className="input"
               placeholder="Nombre, club, nacionalidad o código..."
-              value={
-                search
-              }
-              onChange={(
-                event
-              ) =>
+              value={search}
+              onChange={(event) =>
                 setSearch(
                   event.target.value
                 )
@@ -759,9 +859,7 @@ export default function PlayersPage() {
               value={
                 positionFilter
               }
-              onChange={(
-                event
-              ) =>
+              onChange={(event) =>
                 setPositionFilter(
                   event.target.value
                 )
@@ -880,9 +978,7 @@ export default function PlayersPage() {
             <tbody>
 
               {filteredPlayers.map(
-                (
-                  player
-                ) => {
+                (player) => {
                   const age =
                     calculateAge(
                       player.birth_date
@@ -918,20 +1014,15 @@ export default function PlayersPage() {
                       {/* POSICIÓN */}
 
                       <td className="py-4 pr-4">
-
                         {positionLabel(
                           player.position
                         )}
-
                       </td>
 
                       {/* EDAD */}
 
                       <td className="py-4 pr-4">
-
-                        {age ??
-                          "—"}
-
+                        {age ?? "—"}
                       </td>
 
                       {/* ALTURA */}
@@ -1016,6 +1107,8 @@ export default function PlayersPage() {
 
                         <div className="flex justify-end gap-2">
 
+                          {/* TODOS */}
+
                           <a
                             href={`/players/${player.id}`}
                             className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold transition hover:border-slate-500 hover:bg-slate-800"
@@ -1023,26 +1116,45 @@ export default function PlayersPage() {
                             Ver
                           </a>
 
-                          <button
-                            type="button"
-                            disabled={
-                              deletingId ===
+                          {/* ADMIN + SCOUT */}
+
+                          {canEditPlayer && (
+
+                            <a
+                              href={`/players/${player.id}/edit`}
+                              className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold transition hover:border-slate-500 hover:bg-slate-800"
+                            >
+                              Editar
+                            </a>
+
+                          )}
+
+                          {/* SOLO ADMIN */}
+
+                          {canDeactivatePlayer && (
+
+                            <button
+                              type="button"
+                              disabled={
+                                deletingId ===
+                                player.id
+                              }
+                              onClick={() =>
+                                deletePlayer(
+                                  player
+                                )
+                              }
+                              className="rounded-lg border border-red-900/70 px-3 py-2 text-xs font-bold text-red-300 transition hover:border-red-700 hover:bg-red-950/30 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+
+                              {deletingId ===
                               player.id
-                            }
-                            onClick={() =>
-                              deletePlayer(
-                                player
-                              )
-                            }
-                            className="rounded-lg border border-red-900/70 px-3 py-2 text-xs font-bold text-red-300 transition hover:border-red-700 hover:bg-red-950/30 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
+                                ? "Quitando..."
+                                : "Quitar"}
 
-                            {deletingId ===
-                            player.id
-                              ? "Quitando..."
-                              : "Eliminar"}
+                            </button>
 
-                          </button>
+                          )}
 
                         </div>
 
