@@ -8,8 +8,17 @@ import {
   useState,
 } from "react";
 
-import { useParams } from "next/navigation";
-import { supabase } from "../../../lib/supabase";
+import {
+  useParams,
+} from "next/navigation";
+
+import {
+  supabase,
+} from "../../../lib/supabase";
+
+import {
+  useCurrentUser,
+} from "../../../lib/useCurrentUser";
 
 /* =========================================================
    TIPOS
@@ -133,13 +142,15 @@ type AutomaticJob = {
   model_version: string | null;
 };
 
-
 type GoalkeeperTargetConfig = {
   shirt_number: string;
   shirt_color: string;
   active_from_seconds: number;
   active_to_seconds: number | null;
-  starting_goal_side: "LEFT" | "RIGHT" | "AUTO";
+  starting_goal_side:
+    | "LEFT"
+    | "RIGHT"
+    | "AUTO";
 };
 
 type YTPlayer = {
@@ -196,11 +207,13 @@ function formatSeconds(
 
   const minutes =
     Math.floor(
-      safeSeconds / 60
+      safeSeconds /
+      60
     );
 
   const seconds =
-    safeSeconds % 60;
+    safeSeconds %
+    60;
 
   return `${minutes}:${String(
     seconds
@@ -236,8 +249,10 @@ function matchLabel(
     "Visitante";
 
   if (
-    video.home_score !== null &&
-    video.away_score !== null
+    video.home_score !==
+      null &&
+    video.away_score !==
+      null
   ) {
     return `${home} ${video.home_score} - ${video.away_score} ${away}`;
   }
@@ -305,6 +320,27 @@ export default function VideoDetailPage() {
     useParams<{
       id: string;
     }>();
+
+  const {
+    profile,
+    loading: profileLoading,
+    can,
+  } =
+    useCurrentUser();
+
+  /* =======================================================
+     PERMISOS
+  ======================================================= */
+
+  const canManageVideo =
+    can(
+      "videos:create"
+    );
+
+  const canTagVideo =
+    can(
+      "videos:tag"
+    );
 
   const [
     video,
@@ -424,7 +460,6 @@ export default function VideoDetailPage() {
       null
     );
 
-
   const [
     goalkeeperTargetConfig,
     setGoalkeeperTargetConfig,
@@ -434,19 +469,21 @@ export default function VideoDetailPage() {
       shirt_color: "",
       active_from_seconds: 0,
       active_to_seconds: null,
-      starting_goal_side: "AUTO",
+      starting_goal_side:
+        "AUTO",
     });
-
 
   const [
     analysisSourceUrl,
     setAnalysisSourceUrl,
-  ] = useState("");
+  ] =
+    useState("");
 
   const [
     savingAnalysisConfig,
     setSavingAnalysisConfig,
-  ] = useState(false);
+  ] =
+    useState(false);
 
   const playerContainerRef =
     useRef<HTMLDivElement | null>(
@@ -505,35 +542,39 @@ export default function VideoDetailPage() {
             videoId,
 
             playerVars: {
-              controls: 1,
-              rel: 0,
-              modestbranding: 1,
+              controls:
+                1,
+              rel:
+                0,
+              modestbranding:
+                1,
             },
 
             events: {
-              onReady: () => {
-                if (
-                  cancelled
-                ) {
-                  return;
-                }
+              onReady:
+                () => {
+                  if (
+                    cancelled
+                  ) {
+                    return;
+                  }
 
-                setPlayerReady(
-                  true
-                );
+                  setPlayerReady(
+                    true
+                  );
 
-                const total =
-                  youtubePlayerRef
-                    .current
-                    ?.getDuration() ??
-                  0;
+                  const total =
+                    youtubePlayerRef
+                      .current
+                      ?.getDuration() ??
+                    0;
 
-                setDuration(
-                  Math.floor(
-                    total
-                  )
-                );
-              },
+                  setDuration(
+                    Math.floor(
+                      total
+                    )
+                  );
+                },
             },
           }
         );
@@ -596,9 +637,13 @@ export default function VideoDetailPage() {
   ======================================================= */
 
   async function loadData() {
-    setLoading(true);
+    setLoading(
+      true
+    );
 
-    setMessage("");
+    setMessage(
+      ""
+    );
 
     setAutomaticAnalysisMessage(
       ""
@@ -607,7 +652,8 @@ export default function VideoDetailPage() {
     const {
       data: authData,
     } =
-      await supabase.auth.getSession();
+      await supabase.auth
+        .getSession();
 
     if (
       !authData.session
@@ -616,7 +662,9 @@ export default function VideoDetailPage() {
         "Necesitás iniciar sesión."
       );
 
-      setLoading(false);
+      setLoading(
+        false
+      );
 
       return;
     }
@@ -687,7 +735,8 @@ export default function VideoDetailPage() {
           .order(
             "sort_order",
             {
-              ascending: true,
+              ascending:
+                true,
             }
           ),
 
@@ -713,7 +762,8 @@ export default function VideoDetailPage() {
           .order(
             "sort_order",
             {
-              ascending: true,
+              ascending:
+                true,
             }
           ),
 
@@ -750,7 +800,8 @@ export default function VideoDetailPage() {
           .order(
             "timestamp_start_seconds",
             {
-              ascending: true,
+              ascending:
+                true,
             }
           ),
 
@@ -772,10 +823,13 @@ export default function VideoDetailPage() {
           .order(
             "created_at",
             {
-              ascending: false,
+              ascending:
+                false,
             }
           )
-          .limit(1),
+          .limit(
+            1
+          ),
       ]);
 
     if (
@@ -786,7 +840,9 @@ export default function VideoDetailPage() {
           .message
       );
 
-      setLoading(false);
+      setLoading(
+        false
+      );
 
       return;
     }
@@ -843,7 +899,8 @@ export default function VideoDetailPage() {
     );
 
     setAnalysisSourceUrl(
-      loadedVideo.analysis_source_url || ""
+      loadedVideo.analysis_source_url ||
+        ""
     );
 
     setMetrics(
@@ -910,7 +967,9 @@ export default function VideoDetailPage() {
       );
     }
 
-    setLoading(false);
+    setLoading(
+      false
+    );
   }
 
   /* =======================================================
@@ -1062,143 +1121,225 @@ export default function VideoDetailPage() {
   ======================================================= */
 
   async function saveAutomaticAnalysisConfig() {
-    if (!video || !video.player_id) {
+    if (
+      !canManageVideo
+    ) {
       setAutomaticAnalysisMessage(
-        "El video debe tener un arquero asociado."
+        "No tenés permisos para modificar la configuración del análisis."
       );
+
       return null;
     }
 
-    setSavingAnalysisConfig(true);
-    setAutomaticAnalysisMessage("");
+    if (
+      !video ||
+      !video.player_id
+    ) {
+      setAutomaticAnalysisMessage(
+        "El video debe tener un arquero asociado."
+      );
+
+      return null;
+    }
+
+    setSavingAnalysisConfig(
+      true
+    );
+
+    setAutomaticAnalysisMessage(
+      ""
+    );
 
     try {
-      const currentVideo = video;
-      const playerId = currentVideo.player_id;
+      const currentVideo =
+        video;
+
+      const playerId =
+        currentVideo.player_id;
 
       let goalkeeperSide:
         | "HOME"
         | "AWAY"
-        | "UNKNOWN" = "UNKNOWN";
+        | "UNKNOWN" =
+        "UNKNOWN";
 
       const goalkeeperTeam =
-        currentVideo.goalkeeper_team?.trim().toLowerCase();
+        currentVideo.goalkeeper_team
+          ?.trim()
+          .toLowerCase();
 
       const homeTeam =
-        currentVideo.home_team?.trim().toLowerCase();
+        currentVideo.home_team
+          ?.trim()
+          .toLowerCase();
 
       const awayTeam =
-        currentVideo.away_team?.trim().toLowerCase();
+        currentVideo.away_team
+          ?.trim()
+          .toLowerCase();
 
       if (
         goalkeeperTeam &&
         homeTeam &&
-        goalkeeperTeam === homeTeam
+        goalkeeperTeam ===
+          homeTeam
       ) {
-        goalkeeperSide = "HOME";
+        goalkeeperSide =
+          "HOME";
       }
 
       if (
         goalkeeperTeam &&
         awayTeam &&
-        goalkeeperTeam === awayTeam
+        goalkeeperTeam ===
+          awayTeam
       ) {
-        goalkeeperSide = "AWAY";
+        goalkeeperSide =
+          "AWAY";
       }
 
       const cleanAnalysisSourceUrl =
         analysisSourceUrl.trim();
 
-      if (!cleanAnalysisSourceUrl) {
-        throw {
-          code: "ANALYSIS_SOURCE_REQUIRED",
-          message:
-            "Ingresá una URL directa al archivo MP4 que utilizará el worker para el análisis.",
-          details:
-            "El enlace de YouTube puede seguir utilizándose para visualización, pero no como fuente automática del worker.",
-        };
+      if (
+        !cleanAnalysisSourceUrl
+      ) {
+        throw new Error(
+          "Ingresá una URL directa al archivo MP4 que utilizará el worker para el análisis."
+        );
       }
 
-      const { data: targetData, error: targetError } =
+      const {
+        data:
+          targetData,
+        error:
+          targetError,
+      } =
         await supabase
-          .from("video_goalkeeper_targets")
+          .from(
+            "video_goalkeeper_targets"
+          )
           .upsert(
             {
-              video_id: currentVideo.id,
-              player_id: playerId,
+              video_id:
+                currentVideo.id,
+
+              player_id:
+                playerId,
+
               team_name:
-                currentVideo.goalkeeper_team || null,
+                currentVideo.goalkeeper_team ||
+                null,
+
               shirt_number:
                 goalkeeperTargetConfig.shirt_number
                   ? Number(
                       goalkeeperTargetConfig.shirt_number
                     )
                   : null,
+
               shirt_color:
-                goalkeeperTargetConfig.shirt_color.trim() ||
+                goalkeeperTargetConfig.shirt_color
+                  .trim() ||
                 null,
-              goalkeeper_side: goalkeeperSide,
+
+              goalkeeper_side:
+                goalkeeperSide,
+
               initial_timestamp_seconds:
                 goalkeeperTargetConfig.active_from_seconds ||
                 0,
+
               active_from_seconds:
                 goalkeeperTargetConfig.active_from_seconds ||
                 0,
+
               active_to_seconds:
                 goalkeeperTargetConfig.active_to_seconds,
+
               starting_goal_side:
                 goalkeeperTargetConfig.starting_goal_side,
+
               identification_notes:
                 "Configurado desde Scout GK",
-              identification_status: "CONFIGURED",
-              updated_at: new Date().toISOString(),
+
+              identification_status:
+                "CONFIGURED",
+
+              updated_at:
+                new Date()
+                  .toISOString(),
             },
             {
-              onConflict: "video_id,player_id",
+              onConflict:
+                "video_id,player_id",
             }
           )
-          .select("*")
+          .select(
+            "*"
+          )
           .single();
 
-      if (targetError) {
+      if (
+        targetError
+      ) {
         throw targetError;
       }
 
-      const { error: videoUpdateError } =
+      const {
+        error:
+          videoUpdateError,
+      } =
         await supabase
-          .from("videos")
+          .from(
+            "videos"
+          )
           .update({
             analysis_source_url:
               cleanAnalysisSourceUrl,
+
             analysis_source_type:
               "DIRECT_MP4",
-            updated_at:
-              new Date().toISOString(),
-          })
-          .eq("id", currentVideo.id);
 
-      if (videoUpdateError) {
+            updated_at:
+              new Date()
+                .toISOString(),
+          })
+          .eq(
+            "id",
+            currentVideo.id
+          );
+
+      if (
+        videoUpdateError
+      ) {
         throw videoUpdateError;
       }
 
       setVideo({
         ...currentVideo,
+
         analysis_source_url:
           cleanAnalysisSourceUrl,
+
         analysis_source_type:
           "DIRECT_MP4",
       });
 
       setAutomaticAnalysisMessage(
         `Configuración guardada. Dorsal: ${
-          targetData?.shirt_number ?? "sin definir"
+          targetData?.shirt_number ??
+          "sin definir"
         } · Color: ${
-          targetData?.shirt_color ?? "sin definir"
+          targetData?.shirt_color ??
+          "sin definir"
         }.`
       );
 
       return targetData;
-    } catch (error: unknown) {
+    } catch (
+      error: unknown
+    ) {
       console.error(
         "SCOUT GK - Save automatic config error:",
         error
@@ -1208,49 +1349,94 @@ export default function VideoDetailPage() {
         "No se pudo guardar la configuración.";
 
       if (
-        typeof error === "object" &&
-        error !== null
+        error instanceof Error
       ) {
-        const dbError = error as {
-          code?: string;
-          message?: string;
-          details?: string;
-          hint?: string;
-        };
+        errorMessage =
+          error.message;
+      } else if (
+        typeof error ===
+          "object" &&
+        error !==
+          null
+      ) {
+        const dbError =
+          error as {
+            code?: string;
+            message?: string;
+            details?: string;
+            hint?: string;
+          };
 
-        const parts: string[] = [];
+        const parts:
+          string[] =
+          [];
 
-        if (dbError.code) {
-          parts.push(`Código: ${dbError.code}`);
+        if (
+          dbError.code
+        ) {
+          parts.push(
+            `Código: ${dbError.code}`
+          );
         }
 
-        if (dbError.message) {
-          parts.push(`Mensaje: ${dbError.message}`);
+        if (
+          dbError.message
+        ) {
+          parts.push(
+            `Mensaje: ${dbError.message}`
+          );
         }
 
-        if (dbError.details) {
-          parts.push(`Detalle: ${dbError.details}`);
+        if (
+          dbError.details
+        ) {
+          parts.push(
+            `Detalle: ${dbError.details}`
+          );
         }
 
-        if (dbError.hint) {
-          parts.push(`Sugerencia: ${dbError.hint}`);
+        if (
+          dbError.hint
+        ) {
+          parts.push(
+            `Sugerencia: ${dbError.hint}`
+          );
         }
 
-        if (parts.length > 0) {
-          errorMessage = parts.join(" | ");
+        if (
+          parts.length >
+          0
+        ) {
+          errorMessage =
+            parts.join(
+              " | "
+            );
         }
-      } else if (error instanceof Error) {
-        errorMessage = error.message;
       }
 
-      setAutomaticAnalysisMessage(errorMessage);
+      setAutomaticAnalysisMessage(
+        errorMessage
+      );
+
       return null;
     } finally {
-      setSavingAnalysisConfig(false);
+      setSavingAnalysisConfig(
+        false
+      );
     }
   }
 
   async function startAutomaticAnalysis() {
+    if (
+      !canManageVideo
+    ) {
+      setAutomaticAnalysisMessage(
+        "No tenés permisos para iniciar análisis automáticos."
+      );
+
+      return;
+    }
+
     if (
       !video
     ) {
@@ -1289,13 +1475,11 @@ export default function VideoDetailPage() {
       const savedTarget =
         await saveAutomaticAnalysisConfig();
 
-      if (!savedTarget) {
+      if (
+        !savedTarget
+      ) {
         return;
       }
-
-      /* -----------------------------------------------
-         2. EVITAR JOB DUPLICADO
-      ----------------------------------------------- */
 
       const {
         data:
@@ -1329,7 +1513,9 @@ export default function VideoDetailPage() {
               "PROCESSING",
             ]
           )
-          .limit(1);
+          .limit(
+            1
+          );
 
       if (
         existingJobError
@@ -1357,10 +1543,6 @@ export default function VideoDetailPage() {
 
         return;
       }
-
-      /* -----------------------------------------------
-         3. CREAR JOB
-      ----------------------------------------------- */
 
       const {
         data:
@@ -1428,10 +1610,6 @@ export default function VideoDetailPage() {
       const newJob =
         createdJob as AutomaticJob;
 
-      /* -----------------------------------------------
-         4. ACTUALIZAR VIDEO
-      ----------------------------------------------- */
-
       const {
         error:
           videoUpdateError,
@@ -1482,65 +1660,18 @@ export default function VideoDetailPage() {
           8
         )}… pendiente de procesamiento.`
       );
-    } catch (error: unknown) {
+    } catch (
+      error: unknown
+    ) {
       console.error(
         "SCOUT GK - Automatic analysis error:",
         error
       );
 
-      let errorMessage =
-        "No se pudo iniciar el análisis automático.";
-
-      if (
-        typeof error === "object" &&
-        error !== null
-      ) {
-        const supabaseError = error as {
-          message?: string;
-          code?: string;
-          details?: string;
-          hint?: string;
-        };
-
-        const parts: string[] = [];
-
-        if (supabaseError.code) {
-          parts.push(
-            `Código: ${supabaseError.code}`
-          );
-        }
-
-        if (supabaseError.message) {
-          parts.push(
-            `Mensaje: ${supabaseError.message}`
-          );
-        }
-
-        if (supabaseError.details) {
-          parts.push(
-            `Detalle: ${supabaseError.details}`
-          );
-        }
-
-        if (supabaseError.hint) {
-          parts.push(
-            `Sugerencia: ${supabaseError.hint}`
-          );
-        }
-
-        if (parts.length > 0) {
-          errorMessage =
-            parts.join(" | ");
-        }
-      } else if (
-        error instanceof Error
-      ) {
-        errorMessage =
-          error.message;
-      }
-
       setAutomaticAnalysisMessage(
-        errorMessage
+        error instanceof Error
+          ? error.message
+          : "No se pudo iniciar el análisis automático."
       );
     } finally {
       setStartingAutomaticAnalysis(
@@ -1558,6 +1689,16 @@ export default function VideoDetailPage() {
       FormEvent<HTMLFormElement>
   ) {
     event.preventDefault();
+
+    if (
+      !canTagVideo
+    ) {
+      setMessage(
+        "No tenés permisos para registrar eventos."
+      );
+
+      return;
+    }
 
     if (
       !video
@@ -1617,7 +1758,9 @@ export default function VideoDetailPage() {
       true
     );
 
-    setMessage("");
+    setMessage(
+      ""
+    );
 
     try {
       const payload = {
@@ -1792,6 +1935,7 @@ export default function VideoDetailPage() {
     eventsCount: number
   ) {
     if (
+      !canTagVideo ||
       !video
     ) {
       return;
@@ -1875,6 +2019,7 @@ export default function VideoDetailPage() {
 
   async function markReview() {
     if (
+      !canTagVideo ||
       !video
     ) {
       return;
@@ -1947,6 +2092,7 @@ export default function VideoDetailPage() {
 
   async function completeAnalysis() {
     if (
+      !canTagVideo ||
       !video
     ) {
       return;
@@ -2017,65 +2163,6 @@ export default function VideoDetailPage() {
         false
       );
     }
-  }
-
-  /* =======================================================
-     ELIMINAR EVENTO
-  ======================================================= */
-
-  async function deleteEvent(
-    eventId: string
-  ) {
-    const confirmed =
-      window.confirm(
-        "¿Eliminar este evento?"
-      );
-
-    if (
-      !confirmed
-    ) {
-      return;
-    }
-
-    const {
-      error,
-    } =
-      await supabase
-        .from(
-          "video_events"
-        )
-        .delete()
-        .eq(
-          "id",
-          eventId
-        );
-
-    if (
-      error
-    ) {
-      setMessage(
-        error.message
-      );
-
-      return;
-    }
-
-    const updatedEvents =
-      events.filter(
-        (
-          item
-        ) =>
-          item.id !==
-          eventId
-      );
-
-    setEvents(
-      updatedEvents
-    );
-
-    await updateAnalysisState(
-      updatedEvents.length
-    );
   }
 
   /* =======================================================
@@ -2235,51 +2322,64 @@ export default function VideoDetailPage() {
     );
 
   const preEvaluationScore =
-    useMemo(() => {
-      const values =
-        metricsWithEvidence
-          .map(
-            (
-              item
-            ) =>
-              item.score
-          )
-          .filter(
-            (
-              value
-            ): value is number =>
-              value !==
-              null
-          );
+    useMemo(
+      () => {
+        const values =
+          metricsWithEvidence
+            .map(
+              (
+                item
+              ) =>
+                item.score
+            )
+            .filter(
+              (
+                value
+              ): value is number =>
+                value !==
+                null
+            );
 
-      if (
-        values.length ===
-        0
-      ) {
-        return null;
-      }
-
-      return (
-        values.reduce(
-          (
-            total,
-            value
-          ) =>
-            total +
-            value,
+        if (
+          values.length ===
           0
-        ) /
-        values.length
-      );
-    }, [
-      metricsWithEvidence,
-    ]);
+        ) {
+          return null;
+        }
+
+        return (
+          values.reduce(
+            (
+              total,
+              value
+            ) =>
+              total +
+              value,
+            0
+          ) /
+          values.length
+        );
+      },
+      [
+        metricsWithEvidence,
+      ]
+    );
 
   /* =======================================================
      GENERAR INFORME
   ======================================================= */
 
   function generateReportFromVideo() {
+    if (
+      !canTagVideo
+    ) {
+      setMessage(
+        "No tenés permisos para generar informes desde video."
+      );
+
+      return;
+    }
+
     if (
       !video
     ) {
@@ -2408,11 +2508,41 @@ export default function VideoDetailPage() {
   ======================================================= */
 
   if (
-    loading
+    loading ||
+    profileLoading
   ) {
     return (
       <div className="card">
         Cargando video...
+      </div>
+    );
+  }
+
+  /* =======================================================
+     SIN SESIÓN
+  ======================================================= */
+
+  if (
+    !profile
+  ) {
+    return (
+      <div className="card">
+
+        <h1 className="text-2xl font-black">
+          Acceso requerido
+        </h1>
+
+        <p className="mt-3 text-slate-400">
+          Para consultar videos necesitás iniciar sesión.
+        </p>
+
+        <a
+          href="/login"
+          className="btn mt-5"
+        >
+          Ingresar
+        </a>
+
       </div>
     );
   }
@@ -2510,19 +2640,15 @@ export default function VideoDetailPage() {
             </div>
 
             <div className="mt-1 font-black">
-
               {statusLabel(
                 video.analysis_status
               )}
-
             </div>
 
             <div className="mt-1 text-xs text-slate-500">
-
               {video.processing_progress ??
                 0}
               %
-
             </div>
 
           </div>
@@ -2587,12 +2713,9 @@ export default function VideoDetailPage() {
             </h2>
 
             <p className="mt-1 text-sm text-slate-400">
-
               Fuente:{" "}
-
               {video.provider ||
                 "Externa"}
-
             </p>
 
           </div>
@@ -2641,18 +2764,22 @@ export default function VideoDetailPage() {
                 − 5 s
               </button>
 
-              <button
-                type="button"
-                onClick={
-                  captureCurrentTime
-                }
-                disabled={
-                  !playerReady
-                }
-                className="btn"
-              >
-                Capturar tiempo actual
-              </button>
+              {canTagVideo && (
+
+                <button
+                  type="button"
+                  onClick={
+                    captureCurrentTime
+                  }
+                  disabled={
+                    !playerReady
+                  }
+                  className="btn"
+                >
+                  Capturar tiempo actual
+                </button>
+
+              )}
 
               <button
                 type="button"
@@ -2692,7 +2819,7 @@ export default function VideoDetailPage() {
           <div className="mt-6 rounded-xl border border-slate-800 bg-slate-950/30 p-5 text-sm text-slate-400">
 
             Esta fuente no permite sincronización automática.
-            Abrila en otra pestaña y cargá el timestamp manualmente.
+            Abrila en otra pestaña para consultar el video.
 
           </div>
 
@@ -2720,9 +2847,9 @@ export default function VideoDetailPage() {
 
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
 
-              Scout GK analizará exclusivamente al arquero
-              asociado a este video y generará acciones
-              candidatas para revisión humana.
+              Scout GK analiza exclusivamente al arquero
+              asociado al video y utiliza las acciones detectadas
+              como evidencia para revisión.
 
             </p>
 
@@ -2765,11 +2892,9 @@ export default function VideoDetailPage() {
             </div>
 
             <div className="mt-2 font-bold">
-
               {video.players
                 ?.full_name ||
                 "Sin arquero asociado"}
-
             </div>
 
           </div>
@@ -2781,10 +2906,8 @@ export default function VideoDetailPage() {
             </div>
 
             <div className="mt-2 font-bold">
-
               {video.goalkeeper_team ||
                 "Sin definir"}
-
             </div>
 
           </div>
@@ -2800,181 +2923,271 @@ export default function VideoDetailPage() {
             </div>
 
             <div className="mt-1 text-xs text-slate-500">
-
               {automaticJob?.model_version ||
                 "v0.2.0"}
-
             </div>
 
           </div>
 
         </div>
 
-        <div className="mt-6 rounded-xl border border-slate-800 p-4">
+        {/* CONFIGURACIÓN: ADMIN + SCOUT */}
 
-          <div className="font-bold">
-            Fuente para análisis automático
-          </div>
+        {canManageVideo && (
+          <>
 
-          <p className="mt-1 text-sm text-slate-400">
-            YouTube continúa siendo la fuente de visualización. Para el motor de visión necesitás una URL directa y accesible al archivo MP4.
-          </p>
+            <div className="mt-6 rounded-xl border border-slate-800 p-4">
 
-          <div className="mt-4">
-            <label className="label">
-              URL directa del MP4
-            </label>
+              <div className="font-bold">
+                Fuente para análisis automático
+              </div>
 
-            <input
-              className="input"
-              type="url"
-              placeholder="https://.../partido.mp4"
-              value={analysisSourceUrl}
-              onChange={(event) =>
-                setAnalysisSourceUrl(
-                  event.target.value
-                )
-              }
-            />
+              <p className="mt-1 text-sm text-slate-400">
+                YouTube continúa siendo la fuente de visualización.
+                Para el motor de visión necesitás una URL directa
+                y accesible al archivo MP4.
+              </p>
 
-            <div className="mt-2 text-xs text-slate-500">
-              Debe abrir o descargar directamente el archivo de video, sin requerir inicio de sesión.
-            </div>
-          </div>
+              <div className="mt-4">
 
-        </div>
+                <label className="label">
+                  URL directa del MP4
+                </label>
 
-        <div className="mt-6 rounded-xl border border-slate-800 p-4">
+                <input
+                  className="input"
+                  type="url"
+                  placeholder="https://.../partido.mp4"
+                  value={
+                    analysisSourceUrl
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setAnalysisSourceUrl(
+                      event.target.value
+                    )
+                  }
+                />
 
-          <div className="font-bold">
-            Configuración del arquero objetivo
-          </div>
+                <div className="mt-2 text-xs text-slate-500">
+                  Debe abrir o descargar directamente el archivo de video,
+                  sin requerir inicio de sesión.
+                </div>
 
-          <p className="mt-1 text-sm text-slate-400">
-            Estos datos ayudan al motor de visión a localizar y seguir al arquero correcto.
-          </p>
+              </div>
 
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-
-            <div>
-              <label className="label">
-                Dorsal
-              </label>
-
-              <input
-                className="input"
-                inputMode="numeric"
-                placeholder="Ej. 1"
-                value={goalkeeperTargetConfig.shirt_number}
-                onChange={(event) =>
-                  setGoalkeeperTargetConfig((current) => ({
-                    ...current,
-                    shirt_number: event.target.value,
-                  }))
-                }
-              />
             </div>
 
-            <div>
-              <label className="label">
-                Color principal de camiseta
-              </label>
+            <div className="mt-6 rounded-xl border border-slate-800 p-4">
 
-              <input
-                className="input"
-                placeholder="Ej. amarillo, rojo, verde"
-                value={goalkeeperTargetConfig.shirt_color}
-                onChange={(event) =>
-                  setGoalkeeperTargetConfig((current) => ({
-                    ...current,
-                    shirt_color: event.target.value,
-                  }))
-                }
-              />
+              <div className="font-bold">
+                Configuración del arquero objetivo
+              </div>
+
+              <p className="mt-1 text-sm text-slate-400">
+                Estos datos ayudan al motor de visión a localizar
+                y seguir al arquero correcto.
+              </p>
+
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+
+                <div>
+
+                  <label className="label">
+                    Dorsal
+                  </label>
+
+                  <input
+                    className="input"
+                    inputMode="numeric"
+                    placeholder="Ej. 1"
+                    value={
+                      goalkeeperTargetConfig.shirt_number
+                    }
+                    onChange={(
+                      event
+                    ) =>
+                      setGoalkeeperTargetConfig(
+                        (
+                          current
+                        ) => ({
+                          ...current,
+
+                          shirt_number:
+                            event.target.value,
+                        })
+                      )
+                    }
+                  />
+
+                </div>
+
+                <div>
+
+                  <label className="label">
+                    Color principal de camiseta
+                  </label>
+
+                  <input
+                    className="input"
+                    placeholder="Ej. amarillo, rojo, verde"
+                    value={
+                      goalkeeperTargetConfig.shirt_color
+                    }
+                    onChange={(
+                      event
+                    ) =>
+                      setGoalkeeperTargetConfig(
+                        (
+                          current
+                        ) => ({
+                          ...current,
+
+                          shirt_color:
+                            event.target.value,
+                        })
+                      )
+                    }
+                  />
+
+                </div>
+
+                <div>
+
+                  <label className="label">
+                    Inicio del seguimiento (segundos)
+                  </label>
+
+                  <input
+                    className="input"
+                    type="number"
+                    min="0"
+                    value={
+                      goalkeeperTargetConfig.active_from_seconds
+                    }
+                    onChange={(
+                      event
+                    ) =>
+                      setGoalkeeperTargetConfig(
+                        (
+                          current
+                        ) => ({
+                          ...current,
+
+                          active_from_seconds:
+                            Math.max(
+                              0,
+                              Number(
+                                event.target.value
+                              ) ||
+                                0
+                            ),
+                        })
+                      )
+                    }
+                  />
+
+                </div>
+
+                <div>
+
+                  <label className="label">
+                    Fin del seguimiento (segundos)
+                  </label>
+
+                  <input
+                    className="input"
+                    type="number"
+                    min="0"
+                    placeholder="Vacío = hasta el final"
+                    value={
+                      goalkeeperTargetConfig.active_to_seconds ===
+                      null
+                        ? ""
+                        : goalkeeperTargetConfig.active_to_seconds
+                    }
+                    onChange={(
+                      event
+                    ) =>
+                      setGoalkeeperTargetConfig(
+                        (
+                          current
+                        ) => ({
+                          ...current,
+
+                          active_to_seconds:
+                            event.target.value ===
+                            ""
+                              ? null
+                              : Math.max(
+                                  0,
+                                  Number(
+                                    event.target.value
+                                  ) ||
+                                    0
+                                ),
+                        })
+                      )
+                    }
+                  />
+
+                </div>
+
+                <div>
+
+                  <label className="label">
+                    Arco inicial
+                  </label>
+
+                  <select
+                    className="input"
+                    value={
+                      goalkeeperTargetConfig.starting_goal_side
+                    }
+                    onChange={(
+                      event
+                    ) =>
+                      setGoalkeeperTargetConfig(
+                        (
+                          current
+                        ) => ({
+                          ...current,
+
+                          starting_goal_side:
+                            event.target.value as
+                              | "LEFT"
+                              | "RIGHT"
+                              | "AUTO",
+                        })
+                      )
+                    }
+                  >
+
+                    <option value="AUTO">
+                      Detectar automáticamente
+                    </option>
+
+                    <option value="LEFT">
+                      Izquierda de pantalla
+                    </option>
+
+                    <option value="RIGHT">
+                      Derecha de pantalla
+                    </option>
+
+                  </select>
+
+                </div>
+
+              </div>
+
             </div>
 
-            <div>
-              <label className="label">
-                Inicio del seguimiento (segundos)
-              </label>
+          </>
+        )}
 
-              <input
-                className="input"
-                type="number"
-                min="0"
-                value={goalkeeperTargetConfig.active_from_seconds}
-                onChange={(event) =>
-                  setGoalkeeperTargetConfig((current) => ({
-                    ...current,
-                    active_from_seconds: Math.max(
-                      0,
-                      Number(event.target.value) || 0
-                    ),
-                  }))
-                }
-              />
-            </div>
-
-            <div>
-              <label className="label">
-                Fin del seguimiento (segundos)
-              </label>
-
-              <input
-                className="input"
-                type="number"
-                min="0"
-                placeholder="Vacío = hasta el final"
-                value={
-                  goalkeeperTargetConfig.active_to_seconds === null
-                    ? ""
-                    : goalkeeperTargetConfig.active_to_seconds
-                }
-                onChange={(event) =>
-                  setGoalkeeperTargetConfig((current) => ({
-                    ...current,
-                    active_to_seconds:
-                      event.target.value === ""
-                        ? null
-                        : Math.max(0, Number(event.target.value) || 0),
-                  }))
-                }
-              />
-            </div>
-
-            <div>
-              <label className="label">
-                Arco inicial
-              </label>
-
-              <select
-                className="input"
-                value={goalkeeperTargetConfig.starting_goal_side}
-                onChange={(event) =>
-                  setGoalkeeperTargetConfig((current) => ({
-                    ...current,
-                    starting_goal_side: event.target.value as
-                      | "LEFT"
-                      | "RIGHT"
-                      | "AUTO",
-                  }))
-                }
-              >
-                <option value="AUTO">
-                  Detectar automáticamente
-                </option>
-                <option value="LEFT">
-                  Izquierda de pantalla
-                </option>
-                <option value="RIGHT">
-                  Derecha de pantalla
-                </option>
-              </select>
-            </div>
-
-          </div>
-
-        </div>
+        {/* FLUJO */}
 
         <div className="mt-6 rounded-xl border border-slate-800 bg-slate-950/20 p-4">
 
@@ -2999,6 +3212,8 @@ export default function VideoDetailPage() {
           </div>
 
         </div>
+
+        {/* JOB */}
 
         {automaticJob && (
 
@@ -3043,11 +3258,9 @@ export default function VideoDetailPage() {
                 </div>
 
                 <div className="mt-1 font-bold">
-
                   {automaticJob.progress ??
                     0}
                   %
-
                 </div>
 
               </div>
@@ -3061,30 +3274,14 @@ export default function VideoDetailPage() {
         {automaticAnalysisMessage && (
 
           <div className="mt-5 rounded-xl border border-slate-700 p-4 text-sm">
-
             {automaticAnalysisMessage}
-
           </div>
 
         )}
 
-        <div className="mt-6 flex flex-wrap justify-end gap-3">
+        {/* ACCIONES */}
 
-          <button
-            type="button"
-            className="rounded-lg border border-slate-600 px-4 py-3 text-sm"
-            onClick={
-              saveAutomaticAnalysisConfig
-            }
-            disabled={
-              savingAnalysisConfig ||
-              !video.player_id
-            }
-          >
-            {savingAnalysisConfig
-              ? "Guardando..."
-              : "Guardar configuración"}
-          </button>
+        <div className="mt-6 flex flex-wrap justify-end gap-3">
 
           <button
             type="button"
@@ -3096,27 +3293,47 @@ export default function VideoDetailPage() {
             Actualizar estado
           </button>
 
-          <button
-            type="button"
-            className="btn"
-            onClick={
-              startAutomaticAnalysis
-            }
-            disabled={
-              startingAutomaticAnalysis ||
-              !video.player_id ||
-              automaticJob?.status ===
-                "PENDING" ||
-              automaticJob?.status ===
-                "PROCESSING"
-            }
-          >
+          {canManageVideo && (
+            <>
 
-            {startingAutomaticAnalysis
-              ? "Preparando análisis..."
-              : "⚡ Analizar automáticamente"}
+              <button
+                type="button"
+                className="rounded-lg border border-slate-600 px-4 py-3 text-sm"
+                onClick={
+                  saveAutomaticAnalysisConfig
+                }
+                disabled={
+                  savingAnalysisConfig ||
+                  !video.player_id
+                }
+              >
+                {savingAnalysisConfig
+                  ? "Guardando..."
+                  : "Guardar configuración"}
+              </button>
 
-          </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={
+                  startAutomaticAnalysis
+                }
+                disabled={
+                  startingAutomaticAnalysis ||
+                  !video.player_id ||
+                  automaticJob?.status ===
+                    "PENDING" ||
+                  automaticJob?.status ===
+                    "PROCESSING"
+                }
+              >
+                {startingAutomaticAnalysis
+                  ? "Preparando análisis..."
+                  : "⚡ Analizar automáticamente"}
+              </button>
+
+            </>
+          )}
 
         </div>
 
@@ -3124,314 +3341,309 @@ export default function VideoDetailPage() {
 
       {/* ===================================================
           REGISTRAR EVENTO MANUAL
+          ADMIN + SCOUT
       =================================================== */}
 
-      <section className="card">
+      {canTagVideo && (
 
-        <h2 className="text-xl font-black">
-          Registrar evento
-        </h2>
+        <section className="card">
 
-        <p className="mt-1 text-sm text-slate-400">
+          <h2 className="text-xl font-black">
+            Registrar evento
+          </h2>
 
-          El tiempo se captura directamente desde el
-          reproductor cuando está disponible.
+          <p className="mt-1 text-sm text-slate-400">
+            El tiempo se captura directamente desde el reproductor
+            cuando está disponible.
+          </p>
 
-        </p>
+          <form
+            onSubmit={
+              handleSaveEvent
+            }
+            className="mt-6 space-y-6"
+          >
 
-        <form
-          onSubmit={
-            handleSaveEvent
-          }
-          className="mt-6 space-y-6"
-        >
+            <div className="grid gap-4 md:grid-cols-2">
 
-          <div className="grid gap-4 md:grid-cols-2">
+              <div>
 
-            <div>
+                <label className="label">
+                  Tipo de evento
+                </label>
 
-              <label className="label">
-                Tipo de evento
-              </label>
-
-              <select
-                className="input"
-                value={
-                  selectedEventType
-                }
-                onChange={(
-                  event
-                ) =>
-                  handleEventTypeChange(
-                    event.target.value
-                  )
-                }
-              >
-
-                <option value="">
-                  Seleccionar tipo de evento...
-                </option>
-
-                {eventTypes.map(
-                  (
-                    item
-                  ) => (
-
-                    <option
-                      key={
-                        item.id
-                      }
-                      value={
-                        item.code
-                      }
-                    >
-                      {item.label}
-                    </option>
-
-                  )
-                )}
-
-              </select>
-
-            </div>
-
-            <div>
-
-              <label className="label">
-                Métrica asociada
-              </label>
-
-              <select
-                className="input"
-                value={
-                  selectedMetricId
-                }
-                onChange={(
-                  event
-                ) =>
-                  setSelectedMetricId(
-                    event.target.value
-                  )
-                }
-              >
-
-                <option value="">
-                  Sin métrica
-                </option>
-
-                {metrics.map(
-                  (
-                    metric
-                  ) => (
-
-                    <option
-                      key={
-                        metric.id
-                      }
-                      value={
-                        metric.id
-                      }
-                    >
-                      {metric.label}
-                    </option>
-
-                  )
-                )}
-
-              </select>
-
-            </div>
-
-          </div>
-
-          <div>
-
-            <label className="label">
-              Timestamp
-            </label>
-
-            <div className="grid gap-4 md:grid-cols-[1fr_140px] md:items-center">
-
-              <input
-                className="input"
-                type="number"
-                min="0"
-                value={
-                  timestamp
-                }
-                onChange={(
-                  event
-                ) =>
-                  setTimestamp(
-                    Number(
+                <select
+                  className="input"
+                  value={
+                    selectedEventType
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    handleEventTypeChange(
                       event.target.value
                     )
-                  )
-                }
-              />
+                  }
+                >
 
-              <div className="rounded-lg bg-slate-950/40 p-3 text-center text-xl font-black">
+                  <option value="">
+                    Seleccionar tipo de evento...
+                  </option>
 
-                {formatSeconds(
-                  timestamp
-                )}
+                  {eventTypes.map(
+                    (
+                      item
+                    ) => (
+
+                      <option
+                        key={
+                          item.id
+                        }
+                        value={
+                          item.code
+                        }
+                      >
+                        {item.label}
+                      </option>
+
+                    )
+                  )}
+
+                </select>
+
+              </div>
+
+              <div>
+
+                <label className="label">
+                  Métrica asociada
+                </label>
+
+                <select
+                  className="input"
+                  value={
+                    selectedMetricId
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setSelectedMetricId(
+                      event.target.value
+                    )
+                  }
+                >
+
+                  <option value="">
+                    Sin métrica
+                  </option>
+
+                  {metrics.map(
+                    (
+                      metric
+                    ) => (
+
+                      <option
+                        key={
+                          metric.id
+                        }
+                        value={
+                          metric.id
+                        }
+                      >
+                        {metric.label}
+                      </option>
+
+                    )
+                  )}
+
+                </select>
 
               </div>
 
             </div>
 
-          </div>
+            <div>
 
-          <div>
-
-            <label className="label">
-              Score del evento
-            </label>
-
-            <div className="flex items-center gap-5">
-
-              <input
-                type="range"
-                min="1"
-                max="10"
-                step="1"
-                value={
-                  eventScore
-                }
-                onChange={(
-                  event
-                ) =>
-                  setEventScore(
-                    Number(
-                      event.target.value
-                    )
-                  )
-                }
-                className="flex-1"
-              />
-
-              <div className="min-w-14 rounded-lg bg-slate-800 px-3 py-2 text-center text-xl font-black">
-
-                {eventScore}
-
-              </div>
-
-            </div>
-
-          </div>
-
-          <div>
-
-            <label className="label">
-              Impacto
-            </label>
-
-            <div className="flex flex-wrap gap-6">
-
-              <label className="flex items-center gap-2">
-
-                <input
-                  type="radio"
-                  name="impact"
-                  checked={
-                    positiveEvent
-                  }
-                  onChange={() =>
-                    setPositiveEvent(
-                      true
-                    )
-                  }
-                />
-
-                Positivo
-
+              <label className="label">
+                Timestamp
               </label>
 
-              <label className="flex items-center gap-2">
+              <div className="grid gap-4 md:grid-cols-[1fr_140px] md:items-center">
 
                 <input
-                  type="radio"
-                  name="impact"
-                  checked={
-                    !positiveEvent
-                  }
-                  onChange={() =>
-                    setPositiveEvent(
-                      false
-                    )
-                  }
-                />
-
-                Negativo
-
-              </label>
-
-            </div>
-
-          </div>
-
-          <div>
-
-            <label className="label">
-              Resultado
-            </label>
-
-            <input
-              className="input"
-              name="result"
-              placeholder="Control, blocaje, despeje, pérdida, gol evitado..."
-            />
-
-          </div>
-
-          <div>
-
-            <label className="label">
-              Comentario técnico
-            </label>
-
-            <textarea
-              className="input min-h-28"
-              name="comment"
-              placeholder="Lectura, decisión, ejecución y contexto de la acción..."
-            />
-
-          </div>
-
-          {message && (
-
-            <div className="rounded-xl border border-red-800 bg-red-950/30 p-4 text-sm">
-
-              {message}
-
-            </div>
-
-          )}
-
-          <div className="flex justify-end">
-
-            <button
-              type="submit"
-              className="btn"
-              disabled={
-                savingEvent ||
-                !selectedEventType
-              }
-            >
-
-              {savingEvent
-                ? "Guardando..."
-                : `+ Registrar evento · ${formatSeconds(
+                  className="input"
+                  type="number"
+                  min="0"
+                  value={
                     timestamp
-                  )}`}
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setTimestamp(
+                      Number(
+                        event.target.value
+                      )
+                    )
+                  }
+                />
 
-            </button>
+                <div className="rounded-lg bg-slate-950/40 p-3 text-center text-xl font-black">
+                  {formatSeconds(
+                    timestamp
+                  )}
+                </div>
 
-          </div>
+              </div>
 
-        </form>
+            </div>
 
-      </section>
+            <div>
+
+              <label className="label">
+                Score del evento
+              </label>
+
+              <div className="flex items-center gap-5">
+
+                <input
+                  type="range"
+                  min="1"
+                  max="10"
+                  step="1"
+                  value={
+                    eventScore
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setEventScore(
+                      Number(
+                        event.target.value
+                      )
+                    )
+                  }
+                  className="flex-1"
+                />
+
+                <div className="min-w-14 rounded-lg bg-slate-800 px-3 py-2 text-center text-xl font-black">
+                  {eventScore}
+                </div>
+
+              </div>
+
+            </div>
+
+            <div>
+
+              <label className="label">
+                Impacto
+              </label>
+
+              <div className="flex flex-wrap gap-6">
+
+                <label className="flex items-center gap-2">
+
+                  <input
+                    type="radio"
+                    name="impact"
+                    checked={
+                      positiveEvent
+                    }
+                    onChange={() =>
+                      setPositiveEvent(
+                        true
+                      )
+                    }
+                  />
+
+                  Positivo
+
+                </label>
+
+                <label className="flex items-center gap-2">
+
+                  <input
+                    type="radio"
+                    name="impact"
+                    checked={
+                      !positiveEvent
+                    }
+                    onChange={() =>
+                      setPositiveEvent(
+                        false
+                      )
+                    }
+                  />
+
+                  Negativo
+
+                </label>
+
+              </div>
+
+            </div>
+
+            <div>
+
+              <label className="label">
+                Resultado
+              </label>
+
+              <input
+                className="input"
+                name="result"
+                placeholder="Control, blocaje, despeje, pérdida, gol evitado..."
+              />
+
+            </div>
+
+            <div>
+
+              <label className="label">
+                Comentario técnico
+              </label>
+
+              <textarea
+                className="input min-h-28"
+                name="comment"
+                placeholder="Lectura, decisión, ejecución y contexto de la acción..."
+              />
+
+            </div>
+
+            {message && (
+
+              <div className="rounded-xl border border-red-800 bg-red-950/30 p-4 text-sm">
+                {message}
+              </div>
+
+            )}
+
+            <div className="flex justify-end">
+
+              <button
+                type="submit"
+                className="btn"
+                disabled={
+                  savingEvent ||
+                  !selectedEventType
+                }
+              >
+                {savingEvent
+                  ? "Guardando..."
+                  : `+ Registrar evento · ${formatSeconds(
+                      timestamp
+                    )}`}
+              </button>
+
+            </div>
+
+          </form>
+
+        </section>
+
+      )}
 
       {/* ===================================================
           PREEVALUACIÓN
@@ -3448,27 +3660,28 @@ export default function VideoDetailPage() {
             </h2>
 
             <p className="mt-1 text-sm text-slate-400">
-
-              Las métricas sin evidencia permanecen
-              sin puntuación.
-
+              Las métricas sin evidencia permanecen sin puntuación.
             </p>
 
           </div>
 
-          <button
-            type="button"
-            className="btn"
-            onClick={
-              generateReportFromVideo
-            }
-            disabled={
-              metricsWithEvidence.length ===
-              0
-            }
-          >
-            Generar informe desde video
-          </button>
+          {canTagVideo && (
+
+            <button
+              type="button"
+              className="btn"
+              onClick={
+                generateReportFromVideo
+              }
+              disabled={
+                metricsWithEvidence.length ===
+                0
+              }
+            >
+              Generar informe desde video
+            </button>
+
+          )}
 
         </div>
 
@@ -3534,16 +3747,12 @@ export default function VideoDetailPage() {
                   <div className="mt-4 text-xs text-slate-500">
 
                     Positivos:{" "}
-                    {
-                      item.positive_count
-                    }
+                    {item.positive_count}
 
                     {" · "}
 
                     Negativos:{" "}
-                    {
-                      item.negative_count
-                    }
+                    {item.negative_count}
 
                   </div>
 
@@ -3602,46 +3811,48 @@ export default function VideoDetailPage() {
             </h2>
 
             <p className="mt-1 text-sm text-slate-400">
-
               Hacé clic sobre el tiempo para volver a esa acción.
-
             </p>
 
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          {canTagVideo && (
 
-            <button
-              type="button"
-              className="rounded-lg border border-slate-600 px-4 py-2 text-sm"
-              onClick={
-                markReview
-              }
-              disabled={
-                updatingStatus ||
-                events.length ===
-                  0
-              }
-            >
-              Pasar a revisión
-            </button>
+            <div className="flex flex-wrap gap-2">
 
-            <button
-              type="button"
-              className="btn"
-              onClick={
-                completeAnalysis
-              }
-              disabled={
-                updatingStatus ||
-                events.length ===
-                  0
-              }
-            >
-              Completar análisis
-            </button>
+              <button
+                type="button"
+                className="rounded-lg border border-slate-600 px-4 py-2 text-sm"
+                onClick={
+                  markReview
+                }
+                disabled={
+                  updatingStatus ||
+                  events.length ===
+                    0
+                }
+              >
+                Pasar a revisión
+              </button>
 
-          </div>
+              <button
+                type="button"
+                className="btn"
+                onClick={
+                  completeAnalysis
+                }
+                disabled={
+                  updatingStatus ||
+                  events.length ===
+                    0
+                }
+              >
+                Completar análisis
+              </button>
+
+            </div>
+
+          )}
 
         </div>
 
@@ -3649,9 +3860,7 @@ export default function VideoDetailPage() {
         0 ? (
 
           <div className="mt-6 rounded-xl border border-slate-800 p-5 text-sm text-slate-500">
-
             Todavía no hay eventos registrados.
-
           </div>
 
         ) : (
@@ -3683,21 +3892,17 @@ export default function VideoDetailPage() {
                         }
                         className="min-w-16 text-left text-xl font-black hover:text-sky-300"
                       >
-
                         {formatSeconds(
                           item.timestamp_start_seconds
                         )}
-
                       </button>
 
                       <div>
 
                         <div className="font-bold">
-
                           {item.event_subtype ||
                             item.event_type ||
                             "Evento"}
-
                         </div>
 
                         <div className="mt-1 text-xs text-slate-500">
@@ -3715,9 +3920,7 @@ export default function VideoDetailPage() {
                         {item.result && (
 
                           <div className="mt-2 text-sm text-slate-300">
-
                             {item.result}
-
                           </div>
 
                         )}
@@ -3725,9 +3928,7 @@ export default function VideoDetailPage() {
                         {item.comment && (
 
                           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-
                             {item.comment}
-
                           </p>
 
                         )}
@@ -3736,46 +3937,28 @@ export default function VideoDetailPage() {
 
                     </div>
 
-                    <div className="flex items-start gap-5">
+                    <div className="text-right">
 
-                      <div className="text-right">
-
-                        <div className="text-xs text-slate-500">
-                          Score
-                        </div>
-
-                        <div className="text-2xl font-black">
-
-                          {item.event_score ??
-                            "—"}
-
-                        </div>
-
-                        <div className="mt-1 text-xs text-slate-500">
-
-                          {item.positive_event ===
-                          true
-                            ? "Positivo"
-                            : item.positive_event ===
-                              false
-                            ? "Negativo"
-                            : "Sin clasificación"}
-
-                        </div>
-
+                      <div className="text-xs text-slate-500">
+                        Score
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() =>
-                          deleteEvent(
-                            item.id
-                          )
-                        }
-                        className="rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-400 hover:text-white"
-                      >
-                        Eliminar
-                      </button>
+                      <div className="text-2xl font-black">
+                        {item.event_score ??
+                          "—"}
+                      </div>
+
+                      <div className="mt-1 text-xs text-slate-500">
+
+                        {item.positive_event ===
+                        true
+                          ? "Positivo"
+                          : item.positive_event ===
+                            false
+                          ? "Negativo"
+                          : "Sin clasificación"}
+
+                      </div>
 
                     </div>
 
