@@ -1,7 +1,22 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import { supabase } from "../../../lib/supabase";
+import {
+  FormEvent,
+  useEffect,
+  useState,
+} from "react";
+
+import {
+  supabase,
+} from "../../../lib/supabase";
+
+import {
+  useCurrentUser,
+} from "../../../lib/useCurrentUser";
+
+/* =========================================================
+   TIPOS
+========================================================= */
 
 type Player = {
   id: string;
@@ -10,34 +25,64 @@ type Player = {
   height_cm: number | null;
 };
 
-function detectProvider(url: string) {
-  const value = url.toLowerCase();
+/* =========================================================
+   HELPERS
+========================================================= */
 
-  if (value.includes("youtube.com") || value.includes("youtu.be")) {
+function detectProvider(url: string) {
+  const value =
+    url.toLowerCase();
+
+  if (
+    value.includes("youtube.com") ||
+    value.includes("youtu.be")
+  ) {
     return "YouTube";
   }
 
-  if (value.includes("vimeo.com")) {
+  if (
+    value.includes("vimeo.com")
+  ) {
     return "Vimeo";
   }
 
-  if (value.includes("drive.google.com")) {
+  if (
+    value.includes("drive.google.com")
+  ) {
     return "Google Drive";
   }
 
   return "External";
 }
 
-function extractYouTubeId(url: string) {
+function extractYouTubeId(
+  url: string
+) {
   try {
-    const parsed = new URL(url);
+    const parsed =
+      new URL(url);
 
-    if (parsed.hostname.includes("youtu.be")) {
-      return parsed.pathname.replace("/", "") || null;
+    if (
+      parsed.hostname.includes(
+        "youtu.be"
+      )
+    ) {
+      return (
+        parsed.pathname.replace(
+          "/",
+          ""
+        ) || null
+      );
     }
 
-    if (parsed.hostname.includes("youtube.com")) {
-      return parsed.searchParams.get("v");
+    if (
+      parsed.hostname.includes(
+        "youtube.com"
+      )
+    ) {
+      return parsed.searchParams.get(
+        "v"
+      );
     }
 
     return null;
@@ -46,227 +91,583 @@ function extractYouTubeId(url: string) {
   }
 }
 
-export default function NewVideoPage() {
-  const [players, setPlayers] = useState<Player[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+/* =========================================================
+   PÁGINA
+========================================================= */
 
-  const [message, setMessage] = useState("");
-  const [url, setUrl] = useState("");
+export default function NewVideoPage() {
+  const {
+    profile,
+    loading: profileLoading,
+    can,
+  } =
+    useCurrentUser();
+
+  const [
+    players,
+    setPlayers,
+  ] =
+    useState<Player[]>(
+      []
+    );
+
+  const [
+    loading,
+    setLoading,
+  ] =
+    useState(true);
+
+  const [
+    saving,
+    setSaving,
+  ] =
+    useState(false);
+
+  const [
+    message,
+    setMessage,
+  ] =
+    useState("");
+
+  const [
+    url,
+    setUrl,
+  ] =
+    useState("");
+
+  /* =======================================================
+     PERMISOS
+  ======================================================= */
+
+  const canCreateVideo =
+    can(
+      "videos:create"
+    );
+
+  /* =======================================================
+     CARGA INICIAL
+  ======================================================= */
 
   useEffect(() => {
+    if (
+      profileLoading
+    ) {
+      return;
+    }
+
+    if (
+      !profile ||
+      !canCreateVideo
+    ) {
+      setLoading(
+        false
+      );
+
+      return;
+    }
+
     loadPlayers();
-  }, []);
+  }, [
+    profileLoading,
+    profile,
+    canCreateVideo,
+  ]);
+
+  /* =======================================================
+     CARGAR ARQUEROS
+  ======================================================= */
 
   async function loadPlayers() {
-    setLoading(true);
-    setMessage("");
+    setLoading(
+      true
+    );
 
-    const { data: authData } = await supabase.auth.getSession();
+    setMessage(
+      ""
+    );
 
-    if (!authData.session) {
-      setMessage("Necesitás iniciar sesión.");
-      setLoading(false);
-      return;
+    try {
+      const {
+        data,
+        error,
+      } =
+        await supabase
+          .from(
+            "players"
+          )
+          .select(`
+            id,
+            full_name,
+            position,
+            height_cm
+          `)
+          .eq(
+            "active",
+            true
+          )
+          .eq(
+            "position",
+            "GK"
+          )
+          .order(
+            "last_name",
+            {
+              ascending:
+                true,
+            }
+          );
+
+      if (
+        error
+      ) {
+        throw error;
+      }
+
+      setPlayers(
+        (
+          data ||
+          []
+        ) as Player[]
+      );
+    } catch (
+      error: unknown
+    ) {
+      console.error(
+        "Error cargando arqueros:",
+        error
+      );
+
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "No se pudieron cargar los arqueros."
+      );
+    } finally {
+      setLoading(
+        false
+      );
     }
-
-    const { data, error } = await supabase
-      .from("players")
-      .select(`
-        id,
-        full_name,
-        position,
-        height_cm
-      `)
-      .eq("active", true)
-      .eq("position", "GK")
-      .order("last_name", {
-        ascending: true,
-      });
-
-    if (error) {
-      setMessage(error.message);
-      setLoading(false);
-      return;
-    }
-
-    setPlayers((data || []) as Player[]);
-    setLoading(false);
   }
 
+  /* =======================================================
+     REGISTRAR VIDEO
+  ======================================================= */
+
   async function handleSubmit(
-    event: FormEvent<HTMLFormElement>
+    event:
+      FormEvent<HTMLFormElement>
   ) {
     event.preventDefault();
 
-    const form = new FormData(event.currentTarget);
+    /* -----------------------------------------------------
+       SEGUNDA BARRERA DE PERMISOS
+    ----------------------------------------------------- */
 
-    setSaving(true);
-    setMessage("");
+    if (
+      !can(
+        "videos:create"
+      )
+    ) {
+      setMessage(
+        "No tenés permisos para registrar videos."
+      );
+
+      return;
+    }
+
+    const form =
+      new FormData(
+        event.currentTarget
+      );
+
+    setSaving(
+      true
+    );
+
+    setMessage(
+      ""
+    );
 
     try {
-      const { data: authData } = await supabase.auth.getSession();
+      const {
+        data: authData,
+      } =
+        await supabase.auth
+          .getSession();
 
-      if (!authData.session) {
-        throw new Error("La sesión no está activa.");
+      if (
+        !authData.session
+      ) {
+        throw new Error(
+          "La sesión no está activa."
+        );
       }
 
-      const playerId = String(form.get("player_id") || "").trim();
-      const videoUrl = String(form.get("url") || "").trim();
+      const playerId =
+        String(
+          form.get(
+            "player_id"
+          ) || ""
+        ).trim();
 
-      if (!playerId) {
-        throw new Error("Seleccioná un arquero.");
+      const videoUrl =
+        String(
+          form.get(
+            "url"
+          ) || ""
+        ).trim();
+
+      if (
+        !playerId
+      ) {
+        throw new Error(
+          "Seleccioná un arquero."
+        );
       }
 
-      if (!videoUrl) {
-        throw new Error("Ingresá la URL del video.");
+      if (
+        !videoUrl
+      ) {
+        throw new Error(
+          "Ingresá la URL del video."
+        );
       }
 
-      const provider = detectProvider(videoUrl);
+      const provider =
+        detectProvider(
+          videoUrl
+        );
+
       const youtubeId =
-        provider === "YouTube"
-          ? extractYouTubeId(videoUrl)
+        provider ===
+        "YouTube"
+          ? extractYouTubeId(
+              videoUrl
+            )
           : null;
 
-      const homeScoreValue = String(
-        form.get("home_score") || ""
-      ).trim();
+      const homeScoreValue =
+        String(
+          form.get(
+            "home_score"
+          ) || ""
+        ).trim();
 
-      const awayScoreValue = String(
-        form.get("away_score") || ""
-      ).trim();
+      const awayScoreValue =
+        String(
+          form.get(
+            "away_score"
+          ) || ""
+        ).trim();
 
       const payload = {
-        player_id: playerId,
+        player_id:
+          playerId,
 
         title:
-          String(form.get("title") || "").trim() ||
+          String(
+            form.get(
+              "title"
+            ) || ""
+          ).trim() ||
           "Video de scouting",
 
         description:
-          String(form.get("description") || "").trim() ||
+          String(
+            form.get(
+              "description"
+            ) || ""
+          ).trim() ||
           null,
 
-        url: videoUrl,
+        url:
+          videoUrl,
 
-        video_type: "MATCH",
+        video_type:
+          "MATCH",
 
-        source: provider,
+        source:
+          provider,
 
         provider,
 
-        external_video_id: youtubeId,
+        external_video_id:
+          youtubeId,
 
         match_date:
-          String(form.get("match_date") || "") ||
+          String(
+            form.get(
+              "match_date"
+            ) || ""
+          ) ||
           null,
 
         competition_name:
-          String(form.get("competition_name") || "").trim() ||
+          String(
+            form.get(
+              "competition_name"
+            ) || ""
+          ).trim() ||
           null,
 
         home_team:
-          String(form.get("home_team") || "").trim() ||
+          String(
+            form.get(
+              "home_team"
+            ) || ""
+          ).trim() ||
           null,
 
         away_team:
-          String(form.get("away_team") || "").trim() ||
+          String(
+            form.get(
+              "away_team"
+            ) || ""
+          ).trim() ||
           null,
 
         home_score:
-          homeScoreValue !== ""
-            ? Number(homeScoreValue)
+          homeScoreValue !==
+          ""
+            ? Number(
+                homeScoreValue
+              )
             : null,
 
         away_score:
-          awayScoreValue !== ""
-            ? Number(awayScoreValue)
+          awayScoreValue !==
+          ""
+            ? Number(
+                awayScoreValue
+              )
             : null,
 
         goalkeeper_team:
-          String(form.get("goalkeeper_team") || "").trim() ||
+          String(
+            form.get(
+              "goalkeeper_team"
+            ) || ""
+          ).trim() ||
           null,
 
-        analysis_status: "UNANALYZED",
+        analysis_status:
+          "UNANALYZED",
 
-        processing_progress: 0,
+        processing_progress:
+          0,
 
-        human_validated: false,
+        human_validated:
+          false,
 
-        updated_at: new Date().toISOString(),
+        updated_at:
+          new Date()
+            .toISOString(),
       };
 
-      const { data: videoData, error: videoError } = await supabase
-        .from("videos")
-        .insert(payload)
-        .select("id")
-        .single();
+      /* ---------------------------------------------------
+         CREAR VIDEO
+      --------------------------------------------------- */
 
-      if (videoError) {
+      const {
+        data: videoData,
+        error: videoError,
+      } =
+        await supabase
+          .from(
+            "videos"
+          )
+          .insert(
+            payload
+          )
+          .select(
+            "id"
+          )
+          .single();
+
+      if (
+        videoError
+      ) {
         throw videoError;
       }
 
-      const { error: jobError } = await supabase
-        .from("video_analysis_jobs")
-        .insert({
-          video_id: videoData.id,
-          player_id: playerId,
-          status: "PENDING",
-          analysis_type: "GK_FULL",
-          source_type: "MANUAL",
-          progress: 0,
-          events_detected: 0,
-        });
+      /* ---------------------------------------------------
+         CREAR TRABAJO DE ANÁLISIS
 
-      if (jobError) {
-        console.error(jobError);
+         ADMIN + SCOUT únicamente,
+         porque para llegar aquí ya debe tener
+         videos:create.
+      --------------------------------------------------- */
+
+      const {
+        error: jobError,
+      } =
+        await supabase
+          .from(
+            "video_analysis_jobs"
+          )
+          .insert({
+            video_id:
+              videoData.id,
+
+            player_id:
+              playerId,
+
+            status:
+              "PENDING",
+
+            analysis_type:
+              "GK_FULL",
+
+            source_type:
+              "MANUAL",
+
+            progress:
+              0,
+
+            events_detected:
+              0,
+          });
+
+      if (
+        jobError
+      ) {
+        console.error(
+          "No se pudo crear el trabajo de análisis:",
+          jobError
+        );
       }
 
-      window.location.href = `/videos/${videoData.id}`;
-    } catch (error: any) {
-      console.error(error);
+      /* ---------------------------------------------------
+         IR AL VIDEO
+      --------------------------------------------------- */
 
-      setMessage(
-        error?.message ||
-          "No se pudo registrar el video."
+      window.location.href =
+        `/videos/${videoData.id}`;
+    } catch (
+      error: unknown
+    ) {
+      console.error(
+        "Error registrando video:",
+        error
       );
 
-      setSaving(false);
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "No se pudo registrar el video."
+      );
+
+      setSaving(
+        false
+      );
     }
   }
 
-  if (loading) {
+  /* =======================================================
+     CARGANDO PERFIL / PERMISOS
+  ======================================================= */
+
+  if (
+    profileLoading ||
+    loading
+  ) {
     return (
-      <div className="card">
-        Cargando formulario...
+      <div className="mx-auto max-w-5xl">
+
+        <div className="card">
+
+          <p className="text-sm text-slate-400">
+            Verificando permisos...
+          </p>
+
+        </div>
+
       </div>
     );
   }
 
-  if (message && players.length === 0) {
+  /* =======================================================
+     SIN SESIÓN
+  ======================================================= */
+
+  if (
+    !profile
+  ) {
     return (
-      <div className="card">
-        <h1 className="text-2xl font-black">
-          Nuevo video
-        </h1>
+      <div className="mx-auto max-w-xl">
 
-        <p className="mt-3 text-slate-400">
-          {message}
-        </p>
+        <div className="card">
 
-        <a
-          href="/login"
-          className="btn mt-5"
-        >
-          Ingresar
-        </a>
+          <h1 className="text-2xl font-black">
+            Acceso requerido
+          </h1>
+
+          <p className="mt-3 text-slate-400">
+            Para registrar videos necesitás iniciar sesión.
+          </p>
+
+          <a
+            href="/login"
+            className="btn mt-5"
+          >
+            Ingresar
+          </a>
+
+        </div>
+
       </div>
     );
   }
+
+  /* =======================================================
+     CONSULTA / SIN PERMISO
+  ======================================================= */
+
+  if (
+    !canCreateVideo
+  ) {
+    return (
+      <div className="mx-auto max-w-xl">
+
+        <div className="card">
+
+          <div className="text-xs font-black uppercase tracking-[0.15em] text-slate-500">
+            Módulo audiovisual
+          </div>
+
+          <h1 className="mt-2 text-2xl font-black">
+            Acceso restringido
+          </h1>
+
+          <p className="mt-3 text-slate-400">
+            Tu perfil tiene permisos de consulta,
+            pero no puede registrar nuevos videos.
+          </p>
+
+          <a
+            href="/videos"
+            className="btn mt-5"
+          >
+            Volver a videos
+          </a>
+
+        </div>
+
+      </div>
+    );
+  }
+
+  /* =======================================================
+     FORMULARIO
+  ======================================================= */
 
   return (
     <div className="mx-auto max-w-5xl space-y-8">
+
+      {/* CABECERA */}
+
       <div>
+
         <div className="text-sm text-slate-400">
           Módulo audiovisual
         </div>
@@ -279,19 +680,30 @@ export default function NewVideoPage() {
           Asociá un video de partido a un arquero para comenzar
           el análisis por eventos.
         </p>
+
       </div>
 
       <form
-        onSubmit={handleSubmit}
+        onSubmit={
+          handleSubmit
+        }
         className="space-y-6"
       >
+
+        {/* =================================================
+            ARQUERO Y FUENTE
+        ================================================= */}
+
         <section className="card">
+
           <h2 className="text-xl font-black">
             Arquero y fuente
           </h2>
 
           <div className="mt-6 grid gap-4 md:grid-cols-2">
+
             <div>
+
               <label className="label">
                 Arquero
               </label>
@@ -302,22 +714,36 @@ export default function NewVideoPage() {
                 required
                 defaultValue=""
               >
+
                 <option value="">
                   Seleccionar arquero...
                 </option>
 
-                {players.map((player) => (
-                  <option
-                    key={player.id}
-                    value={player.id}
-                  >
-                    {player.full_name}
-                    {player.height_cm
-                      ? ` · ${player.height_cm} cm`
-                      : ""}
-                  </option>
-                ))}
+                {players.map(
+                  (
+                    player
+                  ) => (
+
+                    <option
+                      key={
+                        player.id
+                      }
+                      value={
+                        player.id
+                      }
+                    >
+                      {player.full_name}
+
+                      {player.height_cm
+                        ? ` · ${player.height_cm} cm`
+                        : ""}
+                    </option>
+
+                  )
+                )}
+
               </select>
+
             </div>
 
             <Field
@@ -327,6 +753,7 @@ export default function NewVideoPage() {
             />
 
             <div className="md:col-span-2">
+
               <label className="label">
                 URL del video
               </label>
@@ -336,9 +763,15 @@ export default function NewVideoPage() {
                 name="url"
                 type="url"
                 required
-                value={url}
-                onChange={(event) =>
-                  setUrl(event.target.value)
+                value={
+                  url
+                }
+                onChange={(
+                  event
+                ) =>
+                  setUrl(
+                    event.target.value
+                  )
                 }
                 placeholder="https://www.youtube.com/watch?v=..."
               />
@@ -347,28 +780,43 @@ export default function NewVideoPage() {
                 En esta etapa usamos enlaces externos para evitar costos
                 de almacenamiento.
               </p>
+
             </div>
 
             {url && (
+
               <div className="md:col-span-2 rounded-xl border border-slate-800 bg-slate-950/30 p-4">
+
                 <div className="text-xs text-slate-500">
                   Fuente detectada
                 </div>
 
                 <div className="mt-1 font-bold">
-                  {detectProvider(url)}
+                  {detectProvider(
+                    url
+                  )}
                 </div>
+
               </div>
+
             )}
+
           </div>
+
         </section>
 
+        {/* =================================================
+            DATOS DEL PARTIDO
+        ================================================= */}
+
         <section className="card">
+
           <h2 className="text-xl font-black">
             Datos del partido
           </h2>
 
           <div className="mt-6 grid gap-4 md:grid-cols-2">
+
             <Field
               label="Fecha del partido"
               name="match_date"
@@ -414,10 +862,17 @@ export default function NewVideoPage() {
               name="goalkeeper_team"
               placeholder="Equipo A"
             />
+
           </div>
+
         </section>
 
+        {/* =================================================
+            OBSERVACIONES
+        ================================================= */}
+
         <section className="card">
+
           <label className="label">
             Observaciones iniciales
           </label>
@@ -427,15 +882,23 @@ export default function NewVideoPage() {
             name="description"
             placeholder="Origen del video, contexto del partido, minutos relevantes u otra información útil..."
           />
+
         </section>
 
+        {/* ERROR */}
+
         {message && (
-          <div className="rounded-xl border border-red-800 bg-red-950/30 p-4">
+
+          <div className="rounded-xl border border-red-800 bg-red-950/30 p-4 text-sm text-red-200">
             {message}
           </div>
+
         )}
 
+        {/* ACCIONES */}
+
         <div className="flex justify-end gap-3 pb-10">
+
           <a
             href="/videos"
             className="rounded-lg border border-slate-600 px-5 py-3"
@@ -446,17 +909,26 @@ export default function NewVideoPage() {
           <button
             type="submit"
             className="btn px-6 py-3"
-            disabled={saving}
+            disabled={
+              saving
+            }
           >
             {saving
               ? "Registrando video..."
               : "Registrar video"}
           </button>
+
         </div>
+
       </form>
+
     </div>
   );
 }
+
+/* =========================================================
+   CAMPO
+========================================================= */
 
 function Field({
   label,
@@ -464,6 +936,7 @@ function Field({
 }: any) {
   return (
     <div>
+
       <label className="label">
         {label}
       </label>
@@ -472,6 +945,7 @@ function Field({
         className="input"
         {...props}
       />
+
     </div>
   );
 }
