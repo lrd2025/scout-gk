@@ -8,6 +8,10 @@ export type UserRole =
   | "SCOUT"
   | "VIEWER";
 
+/* =========================================================
+   PERMISOS DISPONIBLES
+========================================================= */
+
 export type Permission =
   /* DASHBOARD */
   | "dashboard:view"
@@ -23,6 +27,7 @@ export type Permission =
   | "videos:create"
   | "videos:edit"
   | "videos:delete"
+  | "videos:tag"
 
   /* ANÁLISIS */
   | "analysis:view"
@@ -70,6 +75,7 @@ const ROLE_PERMISSIONS: Record<
     "videos:create",
     "videos:edit",
     "videos:delete",
+    "videos:tag",
 
     "analysis:view",
     "analysis:create",
@@ -103,6 +109,7 @@ const ROLE_PERMISSIONS: Record<
     "videos:view",
     "videos:create",
     "videos:edit",
+    "videos:tag",
 
     "analysis:view",
     "analysis:create",
@@ -147,21 +154,45 @@ const ROLE_PERMISSIONS: Record<
 export function hasPermission(
   role:
     | UserRole
+    | string
     | null
     | undefined,
   permission: Permission
 ) {
-  if (!role) {
+  if (
+    role !== "ADMIN" &&
+    role !== "SCOUT" &&
+    role !== "VIEWER"
+  ) {
     return false;
   }
 
-  return (
-    ROLE_PERMISSIONS[
-      role
-    ]?.includes(
-      permission
-    ) ?? false
+  return ROLE_PERMISSIONS[
+    role
+  ].includes(
+    permission
   );
+}
+
+/* =========================================================
+   NORMALIZAR ROL
+========================================================= */
+
+export function normalizeRole(
+  role:
+    | string
+    | null
+    | undefined
+): UserRole {
+  if (
+    role === "ADMIN" ||
+    role === "SCOUT" ||
+    role === "VIEWER"
+  ) {
+    return role;
+  }
+
+  return "VIEWER";
 }
 
 /* =========================================================
@@ -171,10 +202,13 @@ export function hasPermission(
 export function roleLabel(
   role:
     | UserRole
+    | string
     | null
     | undefined
 ) {
-  switch (role) {
+  switch (
+    role
+  ) {
     case "ADMIN":
       return "Administrador";
 
@@ -196,18 +230,21 @@ export function roleLabel(
 export function roleDescription(
   role:
     | UserRole
+    | string
     | null
     | undefined
 ) {
-  switch (role) {
+  switch (
+    role
+  ) {
     case "ADMIN":
       return "Control general de la plataforma. Puede gestionar usuarios, roles, jugadores, videos, análisis e informes.";
 
     case "SCOUT":
-      return "Puede registrar y editar jugadores, cargar videos, realizar análisis y generar informes de scouting.";
+      return "Puede registrar y editar jugadores, cargar videos, etiquetar acciones, realizar análisis y generar informes de scouting.";
 
     case "VIEWER":
-      return "Perfil de consulta. Puede acceder a jugadores, videos, informes y comparaciones sin modificar información.";
+      return "Perfil de consulta. Puede acceder a jugadores, videos, análisis, informes y comparaciones sin modificar información.";
 
     default:
       return "No hay un rol asignado.";
@@ -221,16 +258,21 @@ export function roleDescription(
 export function permissionsForRole(
   role:
     | UserRole
+    | string
     | null
     | undefined
 ): Permission[] {
-  if (!role) {
+  if (
+    role !== "ADMIN" &&
+    role !== "SCOUT" &&
+    role !== "VIEWER"
+  ) {
     return [];
   }
 
   return [
-    ...(ROLE_PERMISSIONS[
+    ...ROLE_PERMISSIONS[
       role
-    ] ?? []),
+    ],
   ];
 }
